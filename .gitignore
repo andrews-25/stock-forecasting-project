@@ -1,0 +1,37 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Data
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Models
+models/
+checkpoints/
+
+# Logs and outputs
+*.log
+*.out
+*.tmp
+
+# System files
+.DS_Store
+
+# IDE/editor configs
+.vscode/
+.idea/
+
+# Python dependency files
+*.egg-info/
