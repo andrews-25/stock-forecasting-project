@@ -20,4 +20,13 @@ if gpus:
     print("Using device: GPU")
 else:
     print("Using device: CPU")
-
+def normalize(df, features):
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(df[features])
+    scaled_df = pd.DataFrame(scaled, columns = features, index = df.index)
+    return  scaled_df, scaler 
+ticker = input("Enter Ticker: ")
+df = get_data(ticker)
+features = ['Open', 'High', 'Low', 'Close', 'Volume']
+normalized_df, scaler = normalize(df, features)
+print(normalized_df.describe())

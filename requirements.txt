@@ -4,3 +4,4 @@ numpy
 pandas
 matplotlib
 scikit-learn
+python-dateutil

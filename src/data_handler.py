@@ -1,7 +1,7 @@
 import yfinance as yf
 import pandas as pd
 from datetime import date
-from dateutil.relativedata import relativedelta
+from dateutil.relativedelta import relativedelta
 import os
 
 SAVE_PATH = "data/processed"
@@ -26,4 +26,4 @@ def get_data(ticker, start_date = DEFAULT_START):
         return pd.read_pickle(processed_path)
     else:
         download_data(ticker, start_date)
-        return pd.read_pickle(processed_path)
+        return pd.read_pickle(processed_path)  
