@@ -8,7 +8,7 @@ SAVE_PATH = "data/processed"
 def download_data(ticker, start_date):
     df = yf.download(ticker, start=start_date)
 
-    os.makefdirs(SAVE_PATH, exist_ok=True)
+    os.makedirs(SAVE_PATH, exist_ok=True)
 
 
     processed_path = os.path.join(SAVE_PATH, f"{ticker}.pkl")
