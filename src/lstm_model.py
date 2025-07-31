@@ -8,7 +8,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Sequential             # type: ignore
 from tensorflow.keras.layers import LSTM, Dense, Dropout # type: ignore
 import matplotlib.pyplot as plt
-from data_handler import load_data
+from data_handler import get_data
 
 
 
