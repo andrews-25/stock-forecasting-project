@@ -1,20 +1,17 @@
 # === Imports ===
-import pandas as pd
 import numpy as np
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-from sklearn.preprocessing import MinMaxScaler
+import random
 import tensorflow as tf
 from tensorflow.keras.models import Model            # type: ignore
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Concatenate # type: ignore
-from tensorflow.keras.optimizers import Adam                #type: ignore
+from tensorflow.keras.optimizers import Adam                # type: ignore
 from tensorflow.keras.losses import Huber                     # type: ignore
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau # type: ignore
-from sklearn.model_selection import train_test_split
-import matplotlib.pyplot as plt
-from data_handler import get_data
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-import random
+import matplotlib.pyplot as plt
+from data_handler import LSTMDataHandler
 
 # === Hyperparameters ===
 config = {
@@ -47,54 +44,20 @@ os.environ['TF_DETERMINISTIC_OPS'] = '1'  # For more determinism on GPU
 # Device Check
 print("TensorFlow version:", tf.__version__)
 gpus = tf.config.list_physical_devices('GPU')
-if gpus:
-    print("Using device: GPU")
-else:
-    print("Using device: CPU")
+print("Using device:", "GPU" if gpus else "CPU")
 
-### Get Data and Normalize ###
-def normalize(df, features):
-    split_index = int(len(df) * config['train_split'])
-    train_df = df.iloc[:split_index]
-
-    scaler = MinMaxScaler()
-    scaler.fit(train_df[features])
-
-    scaled = scaler.transform(df[features])
-    scaled_df = pd.DataFrame(scaled, columns=features, index=df.index)
-    return scaled_df, scaler
-
+# User input ticker
 ticker = input("Enter Ticker: ").upper()
-df = get_data(ticker)
-features = ['Open', 'High', 'Low', 'Close', 'Volume']
-normalized_df, scaler = normalize(df, features)
 
+# Load and prepare data using the new class
+data_handler = LSTMDataHandler(ticker, config)
+(X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test), scaler = data_handler.prepare_data()
+
+features = data_handler.features
 window = config['window_size']
-input_seq = []    # LHCV inputs
-input_open = []   # current open
-target_close = [] # today's close (target)
-
-# Fill input and target sequences
-for i in range(window + 1, len(df)):
-    sequence = normalized_df[['Open', 'High', 'Low', 'Close', 'Volume']].iloc[(i - 1) - window:(i - 1)].values
-    current_open = normalized_df.iloc[i]['Open']
-    current_close = normalized_df.iloc[i]['Close']
-
-    input_seq.append(sequence)
-    input_open.append([current_open])
-    target_close.append(current_close)
-
-# Data Prep
-X_seq = np.array(input_seq)
-X_open = np.array(input_open)
-y = np.array(target_close)
-test_size = 1 - config['train_split']
-X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test = train_test_split(
-    X_seq, X_open, y, test_size=test_size, shuffle=False
-)
 
 # Build model
-lstm_input = Input(shape=(window, 5), name='lstm_input')
+lstm_input = Input(shape=(window, len(features)), name='lstm_input')
 lstm_layer1 = LSTM(config['lstm_units_1'], return_sequences=True, name='lstm_layer_1')(lstm_input)
 lstm_layer1_dropout = Dropout(config['dropout_rate_1'], name='lstm_dropout')(lstm_layer1)
 lstm_layer2 = LSTM(config['lstm_units_2'], return_sequences=False, name='lstm_layer_2')(lstm_layer1_dropout)
@@ -129,6 +92,7 @@ learning_rate = ReduceLROnPlateau(
     min_lr=config['reduce_lr_min_lr']
 )
 
+# Train the model
 history = model.fit(
     [X_seq_train, X_open_train],
     y_train,
@@ -139,7 +103,7 @@ history = model.fit(
     callbacks=[early_stopping, learning_rate]
 )
 
-### Running the Model ###
+# Predict and inverse transform
 predicted_close = model.predict([X_seq_test, X_open_test])
 close_index = features.index('Close')
 
@@ -149,36 +113,37 @@ true_padded = np.zeros((len(y_test), len(features)))
 pred_padded[:, close_index] = predicted_close.flatten()
 true_padded[:, close_index] = y_test.flatten()
 
-# Inverse transform both
 predicted_close_real = scaler.inverse_transform(pred_padded)[:, close_index]
 y_test_real = scaler.inverse_transform(true_padded)[:, close_index]
 
-# Print a few comparisons
+# Print sample predictions
 print("Sample predictions vs actual (denormalized):")
 for i in range(5):
     print(f"Predicted: ${predicted_close_real[i]:.2f} | Actual: ${y_test_real[i]:.2f}")
 
-# Run stats
+# Metrics
 mse = mean_squared_error(y_test_real, predicted_close_real)
 mae = mean_absolute_error(y_test_real, predicted_close_real)
 r2 = r2_score(y_test_real, predicted_close_real)
 avg_daily_change = np.mean(np.abs(np.diff(y_test_real)))
 std_change = np.std(np.diff(y_test_real))
 
-print(f"\n Model Performance:")
+print(f"\nModel Performance:")
 print(f"Mean Squared Error (MSE): {mse:.4f}")
 print(f"Mean Absolute Error (MAE): {mae:.4f}")
 print(f"R Squared Score: {r2:.4f}")
 print(f"Average Daily Change: {avg_daily_change:.4f}")
 print(f"Standard Deviation of Daily Change: {std_change:.4f}")
 
+# Plot training history
+import matplotlib.pyplot as plt
 
 plt.figure(figsize=(10, 6))
 plt.plot(history.history['loss'], label='Training Loss')
 plt.plot(history.history['val_loss'], label='Validation Loss')
 plt.title('Training and Validation Loss Over Epochs')
 plt.xlabel('Epoch')
-plt.ylabel('Loss (MSE)')
+plt.ylabel('Loss (Huber)')
 plt.legend()
 plt.grid(True)
 plt.show()
