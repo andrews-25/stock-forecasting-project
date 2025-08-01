@@ -35,7 +35,7 @@ config = {
     'reduce_lr_min_lr': 1e-6,
 }
 #Set seed and device check
-random.seed(config['seed'])
+random.seed(config['seed']  )
 np.random.seed(config['seed'])
 tf.random.set_seed(config['seed'])
 os.environ['TF_DETERMINISTIC_OPS'] = '1'
@@ -47,7 +47,7 @@ print("Using device:", "GPU" if gpus else "CPU")
 ticker = input("Enter Ticker: ").upper()
 
 # Load and prepare data
-data_handler = LSTMDataHandler(ticker, config)
+data_handler = LSTMDataHandler(ticker, config, target_type='regression')
 (X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test), scaler = data_handler.prepare_data()
 features = data_handler.features
 window = config['window_size']

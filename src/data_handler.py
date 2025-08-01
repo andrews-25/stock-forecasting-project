@@ -33,13 +33,15 @@ def get_data(ticker, start_date=DEFAULT_START):
 
 
 class LSTMDataHandler:
-    def __init__(self, ticker, config, start_date=DEFAULT_START):
+    def __init__(self, ticker, config, start_date=DEFAULT_START, target_type='regression'):
+        self.target_type = target_type
         self.ticker = ticker
         self.config = config
         self.start_date = start_date
         self.df = get_data(ticker, start_date)
         self.features = ['Open', 'High', 'Low', 'Close', 'Volume']
         self.scaler = MinMaxScaler()
+        
 
     def normalize(self):
         split_index = int(len(self.df) * self.config['train_split'])
@@ -54,18 +56,26 @@ class LSTMDataHandler:
         window = self.config['window_size']
         input_seq = []
         input_open = []
-        target_close = []
+        target_list = []
 
         for i in range(window + 1, len(normalized_df)):
             seq = normalized_df[self.features].iloc[(i - 1) - window:(i - 1)].values
             current_open = normalized_df.iloc[i]['Open']
-            close = normalized_df.iloc[i]['Close']
+            current_close = normalized_df.iloc[i]['Close']
 
             input_seq.append(seq)
             input_open.append([current_open])
-            target_close.append(close)
 
-        return np.array(input_seq), np.array(input_open), np.array(target_close)
+            if self.target_type == 'regression':
+                target = current_close
+            elif self.target_type == 'classification':
+                target = 1 if current_close > current_open else 0
+            else:
+                raise ValueError("Invalid target_type. Use 'regression' or 'classification'.")
+
+            target_list.append(target)
+
+        return np.array(input_seq), np.array(input_open), np.array(target_list)
 
     def prepare_data(self):
         normalized_df = self.normalize()
