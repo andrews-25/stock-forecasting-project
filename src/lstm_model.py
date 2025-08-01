@@ -20,14 +20,14 @@ import random
 config = {
     'seed': 100,
     'train_split': 0.8,            # 80% train, 20% test
-    'window_size': 30,             # sequence length for LSTM input
+    'window_size': 20,             # sequence length for LSTM input
     'lstm_units_1': 128,
     'lstm_units_2': 64,
-    'dropout_rate_1': 0.2,
-    'dropout_rate_2': 0.2,
+    'dropout_rate_1': 0.1,
+    'dropout_rate_2': 0.1,
     'dense_units_open': 32,
     'dense_units_concat': 16,
-    'dropout_rate_final': 0.2,
+    'dropout_rate_final': 0.1,
     'learning_rate': 0.001,
     'batch_size': 8,
     'epochs': 1000,
@@ -162,11 +162,16 @@ for i in range(5):
 mse = mean_squared_error(y_test_real, predicted_close_real)
 mae = mean_absolute_error(y_test_real, predicted_close_real)
 r2 = r2_score(y_test_real, predicted_close_real)
+avg_daily_change = np.mean(np.abs(np.diff(y_test_real)))
+std_change = np.std(np.diff(y_test_real))
 
 print(f"\n Model Performance:")
 print(f"Mean Squared Error (MSE): {mse:.4f}")
 print(f"Mean Absolute Error (MAE): {mae:.4f}")
 print(f"R Squared Score: {r2:.4f}")
+print(f"Average Daily Change: {avg_daily_change:.4f}")
+print(f"Standard Deviation of Daily Change: {std_change:.4f}")
+
 
 plt.figure(figsize=(10, 6))
 plt.plot(history.history['loss'], label='Training Loss')
