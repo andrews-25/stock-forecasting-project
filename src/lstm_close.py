@@ -12,8 +12,8 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau # type: 
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 from data_handler import LSTMDataHandler
-
-# === Hyperparameters ===
+import matplotlib.pyplot as plt
+#Hyperparameters
 config = {
     'seed': 100,
     'train_split': 0.8,            # 80% train, 20% test
@@ -34,14 +34,11 @@ config = {
     'reduce_lr_patience': 10,
     'reduce_lr_min_lr': 1e-6,
 }
-
-# Set seeds for reproducibility
+#Set seed and device check
 random.seed(config['seed'])
 np.random.seed(config['seed'])
 tf.random.set_seed(config['seed'])
-os.environ['TF_DETERMINISTIC_OPS'] = '1'  # For more determinism on GPU
-
-# Device Check
+os.environ['TF_DETERMINISTIC_OPS'] = '1'
 print("TensorFlow version:", tf.__version__)
 gpus = tf.config.list_physical_devices('GPU')
 print("Using device:", "GPU" if gpus else "CPU")
@@ -49,14 +46,17 @@ print("Using device:", "GPU" if gpus else "CPU")
 # User input ticker
 ticker = input("Enter Ticker: ").upper()
 
-# Load and prepare data using the new class
+# Load and prepare data
 data_handler = LSTMDataHandler(ticker, config)
 (X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test), scaler = data_handler.prepare_data()
-
 features = data_handler.features
 window = config['window_size']
 
-# Build model
+
+
+
+
+#### BUILDING THE MODEL ####
 lstm_input = Input(shape=(window, len(features)), name='lstm_input')
 lstm_layer1 = LSTM(config['lstm_units_1'], return_sequences=True, name='lstm_layer_1')(lstm_input)
 lstm_layer1_dropout = Dropout(config['dropout_rate_1'], name='lstm_dropout')(lstm_layer1)
@@ -76,6 +76,8 @@ model = Model(inputs=[lstm_input, current_open_input], outputs=model_output, nam
 opt = Adam(learning_rate=config['learning_rate'])
 model.compile(opt, loss=Huber(delta=1.0), metrics=['mae'])
 
+
+#### TRAINING THE MODEL ####
 early_stopping = EarlyStopping(
     monitor='val_loss',
     patience=config['early_stopping_patience'],
@@ -92,7 +94,6 @@ learning_rate = ReduceLROnPlateau(
     min_lr=config['reduce_lr_min_lr']
 )
 
-# Train the model
 history = model.fit(
     [X_seq_train, X_open_train],
     y_train,
@@ -103,7 +104,9 @@ history = model.fit(
     callbacks=[early_stopping, learning_rate]
 )
 
-# Predict and inverse transform
+
+
+#### EVALUATING THE MODEL####
 predicted_close = model.predict([X_seq_test, X_open_test])
 close_index = features.index('Close')
 
@@ -116,28 +119,24 @@ true_padded[:, close_index] = y_test.flatten()
 predicted_close_real = scaler.inverse_transform(pred_padded)[:, close_index]
 y_test_real = scaler.inverse_transform(true_padded)[:, close_index]
 
-# Print sample predictions
-print("Sample predictions vs actual (denormalized):")
-for i in range(5):
-    print(f"Predicted: ${predicted_close_real[i]:.2f} | Actual: ${y_test_real[i]:.2f}")
-
-# Metrics
+#Calculate metrics
 mse = mean_squared_error(y_test_real, predicted_close_real)
 mae = mean_absolute_error(y_test_real, predicted_close_real)
 r2 = r2_score(y_test_real, predicted_close_real)
 avg_daily_change = np.mean(np.abs(np.diff(y_test_real)))
 std_change = np.std(np.diff(y_test_real))
 
+
+#### PRINT AND PLOT RESULTS ####
+print("Sample predictions vs actual (denormalized):")
+for i in range(5):
+    print(f"Predicted: ${predicted_close_real[i]:.2f} | Actual: ${y_test_real[i]:.2f}")
 print(f"\nModel Performance:")
 print(f"Mean Squared Error (MSE): {mse:.4f}")
 print(f"Mean Absolute Error (MAE): {mae:.4f}")
 print(f"R Squared Score: {r2:.4f}")
 print(f"Average Daily Change: {avg_daily_change:.4f}")
 print(f"Standard Deviation of Daily Change: {std_change:.4f}")
-
-# Plot training history
-import matplotlib.pyplot as plt
-
 plt.figure(figsize=(10, 6))
 plt.plot(history.history['loss'], label='Training Loss')
 plt.plot(history.history['val_loss'], label='Validation Loss')
@@ -147,7 +146,6 @@ plt.ylabel('Loss (Huber)')
 plt.legend()
 plt.grid(True)
 plt.show()
-
 plt.figure(figsize=(10, 6))
 plt.plot(y_test_real, label='Actual Close Price', color='blue')
 plt.plot(predicted_close_real, label='Predicted Close Price', color='orange')
