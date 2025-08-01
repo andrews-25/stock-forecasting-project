@@ -7,10 +7,18 @@ from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
 from tensorflow.keras.models import Model            # type: ignore
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Concatenate # type: ignore
+from tensorflow.keras.optimizers import Adam                #type: ignore
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 from data_handler import get_data
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import random
+seed = 100
+random.seed(seed)
+np.random.seed(seed)
+tf.random.set_seed(seed)
+os.environ['TF_DETERMINISTIC_OPS'] = '1'  # For more determinism on GPU
+
 
 
 
@@ -40,10 +48,10 @@ input_open = [] #current open
 target_close = [] #Todays Close (Target)
 
 #Fill input and target sequences
-for i in range (window, len(df)):
-    sequence = normalized_df[['Open', 'High', 'Low', 'Close', 'Volume']].iloc[i-window:i].values
+for i in range (window + 1, len(df)):
+    sequence = normalized_df[['Open', 'High', 'Low', 'Close', 'Volume']].iloc[(i-1)-window:(i-1)].values
     current_open = normalized_df.iloc[i]['Open']
-    current_close = normalized_df.iloc[i]['Open']
+    current_close = normalized_df.iloc[i]['Close']
     
     input_seq.append(sequence)
     input_open.append([current_open])
@@ -57,25 +65,26 @@ y = np.array(target_close)
 X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test = train_test_split(X_seq, X_open, y, test_size = 0.2, shuffle = False)
 
 lstm_input = Input(shape=(window, 5), name = 'lstm_input')
-lstm_output = LSTM(256, return_sequences = False, name = 'lstm_layer')(lstm_input)
-lstm_output_dropout = Dropout(0.2, name = 'lstm_dropout')(lstm_output)
+lstm_output = LSTM(128, return_sequences = False, name = 'lstm_layer')(lstm_input)
+lstm_output_dropout = Dropout(0.3, name = 'lstm_dropout')(lstm_output)
 
 model_input_open = Input(shape=(1,), name = 'model_input_open')
 dense_open = Dense(32, activation = 'relu', name='open_dense')(model_input_open)
 concat = Concatenate(name = 'concat')([lstm_output_dropout, dense_open])
 
-model_dense_1 = Dense(64, activation='relu', name='dense_1')(concat)
+model_dense_1 = Dense(128, activation='relu', name='dense_1')(concat)
 model_dropout_2 = Dropout(0.2, name = 'model_dropout')(model_dense_1)
 model_output = Dense(1, name = 'model_output')(model_dropout_2)
 
 model = Model(inputs = [lstm_input, model_input_open], outputs = model_output, name = 'ClosePredictorLSTM')
-model.compile(optimizer='adam', loss='mse')
+opt = Adam(learning_rate=.001)
+model.compile(opt, loss='mse')
 
 history =  model.fit(
     [X_seq_train, X_open_train],
     y_train,
     validation_data=([X_seq_test, X_open_test], y_test),
-    epochs = 50,
+    epochs = 100,
     batch_size=8,
     verbose = 1
 )
@@ -96,17 +105,27 @@ true_padded[:, close_index] = y_test.flatten()
 predicted_close_real = scaler.inverse_transform(pred_padded)[:, close_index]
 y_test_real = scaler.inverse_transform(true_padded)[:, close_index]
 
-# Step 3: Print a few comparisons
+#Print a few comparisons
 print("Sample predictions vs actual (denormalized):")
 for i in range(5):
     print(f"Predicted: ${predicted_close_real[i]:.2f} | Actual: ${y_test_real[i]:.2f}")
 
-# Step 4: Run stats
+#Run stats
 mse = mean_squared_error(y_test_real, predicted_close_real)
 mae = mean_absolute_error(y_test_real, predicted_close_real)
 r2 = r2_score(y_test_real, predicted_close_real)
 
-print(f"\n📊 Model Performance:")
+print(f"\n Model Performance:")
 print(f"Mean Squared Error (MSE): {mse:.4f}")
 print(f"Mean Absolute Error (MAE): {mae:.4f}")
 print(f"R² Score: {r2:.4f}")
+
+plt.figure(figsize=(10, 6))
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Training and Validation Loss Over Epochs')
+plt.xlabel('Epoch')
+plt.ylabel('Loss (MSE)')
+plt.legend()
+plt.grid(True)
+plt.show()
