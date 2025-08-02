@@ -6,7 +6,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Model            # type: ignore
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Concatenate # type: ignore
 from tensorflow.keras.optimizers import Adam                # type: ignore
-from tensorflow.keras.losses import binary_crossentropy                     # type: ignore
+from tensorflow.keras.losses import BinaryCrossentropy                    # type: ignore
 from tensorflow.keras.regularizers import l2  #type: ignore
 from keras_cv.losses import FocalLoss  # type: ignore
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau # type: ignore
@@ -34,14 +34,14 @@ config = {
     'train_split': 0.8,            
     'window_size': 30,            
     #NMetwork
-    'lstm_units_1': 120,
-    'lstm_units_2': 60,
+    'lstm_units_1': 60,
+    'lstm_units_2': 30,
     'dense_units_open': 20,
     'merge_dense_units': 16,
     #Dropout
-    'dropout_rate_1': 0.05,
-    'dropout_rate_2': 0.05,
-    'merge_dropout_rate': 0.05,
+    'dropout_rate_1': 0.2,
+    'dropout_rate_2': 0.2,
+    'merge_dropout_rate': 0.2,
     #Training
     'learning_rate': 0.001,
     'batch_size': 10,
@@ -100,9 +100,18 @@ model = Model(inputs=[lstm_input, open_input], outputs=output)
 y_train = y_train.reshape(-1, 1)
 y_test = y_test.reshape(-1, 1)
 
+
+
+bce_loss = BinaryCrossentropy()
+focal_loss = FocalLoss(alpha = .8, gamma = 2)
+def weighted_loss(y_true, y_pred):
+    bce = bce_loss(y_true, y_pred)
+    focal = focal_loss(y_true, y_pred)
+    return .8*bce + .2*focal
+
 model.compile(
     optimizer=Adam(learning_rate=config['learning_rate']),
-    loss= FocalLoss(alpha = .8, gamma = 2),
+    loss= weighted_loss,
     metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
 )
 #### TRAINING THE MODEL ####
@@ -119,7 +128,6 @@ learning_rate = ReduceLROnPlateau(
     min_lr=config['reduce_lr_min_lr'],
     verbose=1
 )
-
 
 
 history = model.fit(
