@@ -8,35 +8,53 @@ from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Concatenate # t
 from tensorflow.keras.optimizers import Adam                # type: ignore
 from tensorflow.keras.losses import binary_crossentropy                     # type: ignore
 from tensorflow.keras.regularizers import l2  #type: ignore
-
+from keras_cv.losses import FocalLoss  # type: ignore
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau # type: ignore
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-
+from sklearn.utils import class_weight
 import matplotlib.pyplot as plt
 from data_handler import LSTMDataHandler
 import matplotlib.pyplot as plt
 
-config = {
-    'seed': 100,
-    'train_split': 0.8,            # 80% train, 20% test
-    'window_size': 30,             # sequence length for LSTM input
-    'lstm_units_1': 64,
-    'lstm_units_2': 32,
-    'dropout_rate_1': 0.2,
-    'dropout_rate_2': 0.2,
-    'dense_units_open': 16,
-    'merge_dense_units': 16,
-    'merge_dropout_rate': 0.2,
-    'learning_rate': 0.0005,
-    'batch_size': 12,
-    'epochs': 1000,
-    'early_stopping_patience': 20,
-    'early_stopping_min_delta': 0.00001,
-    'reduce_lr_factor': 0.5,
-    'reduce_lr_patience': 10,
-    'reduce_lr_min_lr': 1e-6,
-    'regularization_strength': 0.001,
+def find_best_threshold(y_true, y_pred_probs, thresholds=np.arange(0, 1.01, 0.01)):
+    best_thresh = 0.5
+    best_f1 = 0
+    for thresh in thresholds:
+        preds = (y_pred_probs >= thresh).astype(int).flatten()
+        f1 = f1_score(y_true, preds)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_thresh = thresh
+    return best_thresh, best_f1
 
+
+config = {
+    #Data
+    'seed': 100,
+    'train_split': 0.8,            
+    'window_size': 30,            
+    #NMetwork
+    'lstm_units_1': 80,
+    'lstm_units_2': 40,
+    'dense_units_open': 20,
+    'merge_dense_units': 16,
+    #Dropout
+    'dropout_rate_1': 0.25,
+    'dropout_rate_2': 0.25,
+    'merge_dropout_rate': 0.25,
+    #Training
+    'learning_rate': 0.001,
+    'batch_size': 10,
+    'epochs': 1000,
+    #Callbacks
+    'early_stopping_patience': 30,
+    'early_stopping_min_delta': 0.000001,
+    'reduce_lr_factor': 0.75,
+    'reduce_lr_patience': 15,
+    'reduce_lr_min_lr': 1e-6,
+    #Classification
+    'regularization_strength': 0.001,
+    'threshold': 0.3
 }
 
 #Set seed and device check
@@ -77,7 +95,6 @@ merge_dropout = Dropout(config['merge_dropout_rate'], name='dropout_merge')(merg
 
 #output layer
 output = Dense(1, activation = 'sigmoid', name='output')(merge_dropout)
-
 model = Model(inputs=[lstm_input, open_input], outputs=output)
 
 model.compile(
@@ -99,6 +116,9 @@ learning_rate = ReduceLROnPlateau(
     min_lr=config['reduce_lr_min_lr'],
     verbose=1
 )
+
+
+
 history = model.fit(
     [X_seq_train, X_open_train],
     y_train,
@@ -115,11 +135,11 @@ history = model.fit(
 # Predict probabilities (assuming model outputs shape (n_samples, 1))
 y_pred = model.predict([X_seq_test, X_open_test])
 
-# Set your threshold here (try lowering it if recall is low)
-threshold = 0.45
+best_threshold, best_f1 = find_best_threshold(y_test, y_pred)
+print(f"Best threshold found: {best_threshold:.2f} with F1 score: {best_f1:.4f}")
 
 # Convert to binary predictions based on threshold
-y_pred_binary = (y_pred >= threshold).astype(int).flatten()
+y_pred_binary = (y_pred >= best_threshold).astype(int).flatten()
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import numpy as np
@@ -135,8 +155,11 @@ print("Confusion Matrix:")
 print(f"[[TN: {tn}  FP: {fp}]]")
 print(f"[[FN: {fn}  TP: {tp}]]")
 print("Train set class distribution:", np.unique(y_train, return_counts=True))
-plt.figure(figsize=(12,5))
+print("Test set class distribution:", np.unique(y_test, return_counts=True))
 
+
+
+plt.figure(figsize=(12,5))
 plt.subplot(1,2,1)
 plt.plot(history.history['loss'], label='Train Loss')
 plt.plot(history.history['val_loss'], label='Val Loss')
