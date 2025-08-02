@@ -103,7 +103,7 @@ y_test = y_test.reshape(-1, 1)
 
 
 bce_loss = BinaryCrossentropy()
-focal_loss = FocalLoss(alpha = .8, gamma = 2)
+focal_loss = FocalLoss(alpha = .4, gamma = 2)
 def weighted_loss(y_true, y_pred):
     bce = bce_loss(y_true, y_pred)
     focal = focal_loss(y_true, y_pred)
