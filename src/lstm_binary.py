@@ -34,27 +34,27 @@ config = {
     'train_split': 0.8,            
     'window_size': 30,            
     #NMetwork
-    'lstm_units_1': 80,
-    'lstm_units_2': 40,
+    'lstm_units_1': 120,
+    'lstm_units_2': 60,
     'dense_units_open': 20,
     'merge_dense_units': 16,
     #Dropout
-    'dropout_rate_1': 0.25,
-    'dropout_rate_2': 0.25,
-    'merge_dropout_rate': 0.25,
+    'dropout_rate_1': 0.05,
+    'dropout_rate_2': 0.05,
+    'merge_dropout_rate': 0.05,
     #Training
     'learning_rate': 0.001,
     'batch_size': 10,
     'epochs': 1000,
     #Callbacks
     'early_stopping_patience': 30,
-    'early_stopping_min_delta': 0.000001,
-    'reduce_lr_factor': 0.75,
+    'early_stopping_min_delta': 1e-7,
+    'reduce_lr_factor': 0.65,
     'reduce_lr_patience': 15,
     'reduce_lr_min_lr': 1e-6,
     #Classification
-    'regularization_strength': 0.001,
-    'threshold': 0.3
+    'regularization_strength': 0.0001,
+    #'threshold': 0.3
 }
 
 #Set seed and device check
@@ -97,9 +97,12 @@ merge_dropout = Dropout(config['merge_dropout_rate'], name='dropout_merge')(merg
 output = Dense(1, activation = 'sigmoid', name='output')(merge_dropout)
 model = Model(inputs=[lstm_input, open_input], outputs=output)
 
+y_train = y_train.reshape(-1, 1)
+y_test = y_test.reshape(-1, 1)
+
 model.compile(
     optimizer=Adam(learning_rate=config['learning_rate']),
-    loss=binary_crossentropy,
+    loss= FocalLoss(alpha = .8, gamma = 2),
     metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
 )
 #### TRAINING THE MODEL ####
@@ -126,7 +129,8 @@ history = model.fit(
     epochs=config['epochs'],
     batch_size=config['batch_size'],
     callbacks=[early_stopping, learning_rate],
-    verbose=1
+    verbose=1,
+    #class_weight = {}
 )
 
 
