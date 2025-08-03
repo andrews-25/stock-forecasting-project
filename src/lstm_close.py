@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 config = {
     'seed': 100,
     'train_split': 0.8,            # 80% train, 20% test
-    'window_size': 20,             # sequence length for LSTM input
+    'window_size': 30,             # sequence length for LSTM input
     'lstm_units_1': 128,
     'lstm_units_2': 64,
     'dropout_rate_1': 0.1,
@@ -103,7 +103,7 @@ history = model.fit(
     verbose=1,
     callbacks=[early_stopping, learning_rate]
 )
-
+model.save('lstm_close_model.h5')
 
 
 #### EVALUATING THE MODEL####

@@ -30,6 +30,7 @@ def get_data(ticker, start_date=DEFAULT_START):
         return pd.read_pickle(processed_path)
 
 
+
 class LSTMDataHandler:
     def __init__(self, ticker, config, start_date=DEFAULT_START, target_type='regression'):
         self.target_type = target_type
@@ -41,6 +42,7 @@ class LSTMDataHandler:
         self.scaler = MinMaxScaler()
 
     def normalize(self):
+
         split_index = int(len(self.df) * self.config['train_split'])
         train_df = self.df.iloc[:split_index]
 
@@ -74,9 +76,12 @@ class LSTMDataHandler:
 
         return np.array(input_seq), np.array(input_open), np.array(target_list)
 
-    def prepare_data(self):
-        normalized_df = self.normalize()
-        X_seq, X_open, y = self.create_sequences(normalized_df)
+    def prepare_data(self, normalize=True):
+        if normalize:
+            df = self.normalize()
+        else:
+            df = self.df[self.features].copy()
+        X_seq, X_open, y = self.create_sequences(df)
 
         split_index = int(len(X_seq) * self.config['train_split'])
 
@@ -90,3 +95,4 @@ class LSTMDataHandler:
         y_test = y[split_index:]
 
         return (X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test), self.scaler
+    

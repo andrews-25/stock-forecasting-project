@@ -35,3 +35,6 @@ checkpoints/
 
 # Python dependency files
 *.egg-info/
+
+#.h5 model files
+*.h5

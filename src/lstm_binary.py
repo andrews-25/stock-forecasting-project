@@ -142,64 +142,58 @@ learning_rate = ReduceLROnPlateau(
 )
 
 
-history = model.fit(
-    [X_seq_train, X_open_train],
-    y_train,
-    validation_data=([X_seq_test, X_open_test], y_test),
-    epochs=config['epochs'],
-    batch_size=config['batch_size'],
-    callbacks=[early_stopping, learning_rate],
-    verbose=1,
-    #class_weight = {}
-)
+if __name__ == "__main__":
+    # Train the model
+    history = model.fit(
+        [X_seq_train, X_open_train],
+        y_train,
+        validation_data=([X_seq_test, X_open_test], y_test),
+        epochs=config['epochs'],
+        batch_size=config['batch_size'],
+        callbacks=[early_stopping, learning_rate],
+        verbose=1,
+    )
 
+    # Save the trained model
+    model.save('lstm_binary_model.h5')
 
-### MODEL EVALUATION ###
+    # Predict on test set
+    y_pred = model.predict([X_seq_test, X_open_test])
+    best_threshold, best_f1 = find_best_threshold(y_test, y_pred)
+    print(f"Best threshold found: {best_threshold:.2f} with F1 score: {best_f1:.4f}")
 
-# Predict probabilities (assuming model outputs shape (n_samples, 1))
-y_pred = model.predict([X_seq_test, X_open_test])
+    y_pred_binary = (y_pred >= best_threshold).astype(int).flatten()
 
-best_threshold, best_f1 = find_best_threshold(y_test, y_pred)
-print(f"Best threshold found: {best_threshold:.2f} with F1 score: {best_f1:.4f}")
+    # Evaluation metrics
+    print("Accuracy:", accuracy_score(y_test, y_pred_binary))
+    print("Precision:", precision_score(y_test, y_pred_binary))
+    print("Recall:", recall_score(y_test, y_pred_binary))
+    print("F1 Score:", f1_score(y_test, y_pred_binary))
 
-# Convert to binary predictions based on threshold
-y_pred_binary = (y_pred >= best_threshold).astype(int).flatten()
+    cm = confusion_matrix(y_test, y_pred_binary)
+    tn, fp, fn, tp = cm.ravel()
+    print("Confusion Matrix:")
+    print(f"[[TN: {tn}  FP: {fp}]]")
+    print(f"[[FN: {fn}  TP: {tp}]]")
+    print("Train set class distribution:", np.unique(y_train, return_counts=True))
+    print("Test set class distribution:", np.unique(y_test, return_counts=True))
 
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-import numpy as np
-
-print("Accuracy:", accuracy_score(y_test, y_pred_binary))
-print("Precision:", precision_score(y_test, y_pred_binary))
-print("Recall:", recall_score(y_test, y_pred_binary))
-print("F1 Score:", f1_score(y_test, y_pred_binary))
-
-cm = confusion_matrix(y_test, y_pred_binary)
-tn, fp, fn, tp = cm.ravel()
-print("Confusion Matrix:")
-print(f"[[TN: {tn}  FP: {fp}]]")
-print(f"[[FN: {fn}  TP: {tp}]]")
-print("Train set class distribution:", np.unique(y_train, return_counts=True))
-print("Test set class distribution:", np.unique(y_test, return_counts=True))
-
-
-
-plt.figure(figsize=(12,5))
-plt.subplot(1,2,1)
-plt.plot(history.history['loss'], label='Train Loss')
-plt.plot(history.history['val_loss'], label='Val Loss')
-plt.title('Loss Over Epochs')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend()
-plt.grid(True)
-
-plt.subplot(1,2,2)
-plt.plot(history.history['accuracy'], label='Train Accuracy')
-plt.plot(history.history['val_accuracy'], label='Val Accuracy')
-plt.title('Accuracy Over Epochs')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.legend()
-plt.grid(True)
-
-plt.show()
+    # Plot training curves
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Val Loss')
+    plt.title('Loss Over Epochs')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.subplot(1,2,2)
+    plt.plot(history.history['accuracy'], label='Train Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Val Accuracy')
+    plt.title('Accuracy Over Epochs')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
