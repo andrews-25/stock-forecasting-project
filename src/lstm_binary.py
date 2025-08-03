@@ -103,7 +103,19 @@ y_test = y_test.reshape(-1, 1)
 
 
 bce_loss = BinaryCrossentropy()
-focal_loss = FocalLoss(alpha = .4, gamma = 2)
+classes, counts = np.unique(y_train, return_counts=True)
+class_distribution = dict(zip(classes, counts))
+neg = class_distribution.get(0, 0)
+pos = class_distribution.get(1, 0)
+
+#gamma calc and alpha calc
+r = min(neg, pos) / max(neg, pos)
+gamma_min, gamma_max = 1.0, 4.0
+gamma = gamma_min + (gamma_max - gamma_min) * (1 - 2 * r)
+gamma = max(gamma_min, min(gamma, gamma_max))
+alpha = (neg / (neg + pos))
+print("alpha, gamma:" )
+focal_loss = FocalLoss(alpha = alpha, gamma = gamma)  
 def weighted_loss(y_true, y_pred):
     bce = bce_loss(y_true, y_pred)
     focal = focal_loss(y_true, y_pred)
