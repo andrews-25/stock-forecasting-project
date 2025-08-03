@@ -7,7 +7,7 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 
 SAVE_PATH = "data/processed"
-DEFAULT_START = date.today() - relativedelta(years=3)
+DEFAULT_START = date.today() - relativedelta(years=6)
 
 
 def download_data(ticker, start_date=DEFAULT_START):
@@ -42,7 +42,6 @@ class LSTMDataHandler:
         self.scaler = MinMaxScaler()
 
     def normalize(self):
-
         split_index = int(len(self.df) * self.config['train_split'])
         train_df = self.df.iloc[:split_index]
 
@@ -76,23 +75,31 @@ class LSTMDataHandler:
 
         return np.array(input_seq), np.array(input_open), np.array(target_list)
 
-    def prepare_data(self, normalize=True):
+    def prepare_data(self, normalize=True, training=True):
         if normalize:
             df = self.normalize()
         else:
             df = self.df[self.features].copy()
         X_seq, X_open, y = self.create_sequences(df)
 
-        split_index = int(len(X_seq) * self.config['train_split'])
+        #get train split index
+        train_split_index = int(len(X_seq) * self.config['train_split'])
+        X_seq_train = X_seq[:train_split_index]
+        X_open_train = X_open[:train_split_index]
+        y_train = y[:train_split_index]
+        #get validation split index
+        val_split_index = int(len(X_seq) * (self.config['train_split'] + self.config['val_split']))
+        X_seq_val = X_seq[train_split_index:val_split_index]
+        X_open_val = X_open[train_split_index:val_split_index]
+        y_val = y[train_split_index:val_split_index]
+        #get test split index
+        test_split_index = int(len(X_seq))
+        X_seq_test = X_seq[val_split_index:test_split_index]
+        X_open_test = X_open[val_split_index:test_split_index]
+        y_test = y[val_split_index:test_split_index]
 
-        X_seq_train = X_seq[:split_index]
-        X_seq_test = X_seq[split_index:]
+        if training:
+            return (X_seq_train, X_seq_val, X_open_train, X_open_val, y_train, y_val), self.scaler
+        else:
+            return (X_seq_test, X_open_test, y_test), self.scaler
 
-        X_open_train = X_open[:split_index]
-        X_open_test = X_open[split_index:]
-
-        y_train = y[:split_index]
-        y_test = y[split_index:]
-
-        return (X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test), self.scaler
-    

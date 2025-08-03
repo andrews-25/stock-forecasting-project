@@ -16,7 +16,10 @@ import matplotlib.pyplot as plt
 #Hyperparameters
 config = {
     'seed': 100,
-    'train_split': 0.8,            # 80% train, 20% test
+    'train_split': 0.7,
+    'val_split': .15,
+    'test_split': .15,                    # 70% train, 15% val, 15% test
+
     'window_size': 30,             # sequence length for LSTM input
     'lstm_units_1': 128,
     'lstm_units_2': 64,
@@ -48,12 +51,9 @@ ticker = input("Enter Ticker: ").upper()
 
 # Load and prepare data
 data_handler = LSTMDataHandler(ticker, config, target_type='regression')
-(X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test), scaler = data_handler.prepare_data()
+(X_seq_train, X_seq_val, X_open_train, X_open_val, y_train, y_val), scaler = data_handler.prepare_data()
 features = data_handler.features
 window = config['window_size']
-
-
-
 
 
 #### BUILDING THE MODEL ####
@@ -97,7 +97,7 @@ learning_rate = ReduceLROnPlateau(
 history = model.fit(
     [X_seq_train, X_open_train],
     y_train,
-    validation_data=([X_seq_test, X_open_test], y_test),
+    validation_data=([X_seq_val, X_open_val], y_val),
     epochs=config['epochs'],
     batch_size=config['batch_size'],
     verbose=1,
@@ -107,30 +107,30 @@ model.save('lstm_close_model.h5')
 
 
 #### EVALUATING THE MODEL####
-predicted_close = model.predict([X_seq_test, X_open_test])
+predicted_close = model.predict([X_seq_val, X_open_val])
 close_index = features.index('Close')
 
 pred_padded = np.zeros((len(predicted_close), len(features)))
-true_padded = np.zeros((len(y_test), len(features)))
+true_padded = np.zeros((len(y_val), len(features)))
 
 pred_padded[:, close_index] = predicted_close.flatten()
-true_padded[:, close_index] = y_test.flatten()
+true_padded[:, close_index] = y_val.flatten()
 
 predicted_close_real = scaler.inverse_transform(pred_padded)[:, close_index]
-y_test_real = scaler.inverse_transform(true_padded)[:, close_index]
+y_val_real = scaler.inverse_transform(true_padded)[:, close_index]
 
 #Calculate metrics
-mse = mean_squared_error(y_test_real, predicted_close_real)
-mae = mean_absolute_error(y_test_real, predicted_close_real)
-r2 = r2_score(y_test_real, predicted_close_real)
-avg_daily_change = np.mean(np.abs(np.diff(y_test_real)))
-std_change = np.std(np.diff(y_test_real))
+mse = mean_squared_error(y_val_real, predicted_close_real)
+mae = mean_absolute_error(y_val_real, predicted_close_real)
+r2 = r2_score(y_val_real, predicted_close_real)
+avg_daily_change = np.mean(np.abs(np.diff(y_val_real)))
+std_change = np.std(np.diff(y_val_real))
 
 
 #### PRINT AND PLOT RESULTS ####
 print("Sample predictions vs actual (denormalized):")
 for i in range(5):
-    print(f"Predicted: ${predicted_close_real[i]:.2f} | Actual: ${y_test_real[i]:.2f}")
+    print(f"Predicted: ${predicted_close_real[i]:.2f} | Actual: ${y_val_real[i]:.2f}")
 print(f"\nModel Performance:")
 print(f"Mean Squared Error (MSE): {mse:.4f}")
 print(f"Mean Absolute Error (MAE): {mae:.4f}")
@@ -147,7 +147,7 @@ plt.legend()
 plt.grid(True)
 plt.show()
 plt.figure(figsize=(10, 6))
-plt.plot(y_test_real, label='Actual Close Price', color='blue')
+plt.plot(y_val_real, label='Actual Close Price', color='blue')
 plt.plot(predicted_close_real, label='Predicted Close Price', color='orange')
 plt.title('Actual vs Predicted Close Price')
 plt.xlabel('Time Steps')

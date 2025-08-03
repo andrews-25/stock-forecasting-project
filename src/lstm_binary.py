@@ -26,12 +26,12 @@ def find_best_threshold(y_true, y_pred_probs, thresholds=np.arange(0, 1.01, 0.01
             best_f1 = f1
             best_thresh = thresh
     return best_thresh, best_f1
-
-
 config = {
     #Data
     'seed': 100,
-    'train_split': 0.8,            
+    'train_split': 0.7,
+    'val_split': 0.15,
+    'test_split': 0.15,          
     'window_size': 30,            
     #NMetwork
     'lstm_units_1': 60,
@@ -71,9 +71,13 @@ ticker = input("Enter Ticker: ").upper()
 
 
 data_handler = LSTMDataHandler(ticker, config, target_type='classification')
-(X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test), scaler = data_handler.prepare_data()
+(X_seq_train, X_seq_val, X_open_train, X_open_val, y_train, y_val), scaler = data_handler.prepare_data()
 features = data_handler.features
 window = config['window_size']
+
+
+
+
 
 #### BUILDING THE MODEL ####
 
@@ -98,7 +102,7 @@ output = Dense(1, activation = 'sigmoid', name='output')(merge_dropout)
 model = Model(inputs=[lstm_input, open_input], outputs=output)
 
 y_train = y_train.reshape(-1, 1)
-y_test = y_test.reshape(-1, 1)
+y_val = y_val.reshape(-1, 1)
 
 
 
@@ -147,7 +151,7 @@ if __name__ == "__main__":
     history = model.fit(
         [X_seq_train, X_open_train],
         y_train,
-        validation_data=([X_seq_test, X_open_test], y_test),
+        validation_data=([X_seq_val, X_open_val], y_val),
         epochs=config['epochs'],
         batch_size=config['batch_size'],
         callbacks=[early_stopping, learning_rate],
@@ -158,25 +162,25 @@ if __name__ == "__main__":
     model.save('lstm_binary_model.h5')
 
     # Predict on test set
-    y_pred = model.predict([X_seq_test, X_open_test])
-    best_threshold, best_f1 = find_best_threshold(y_test, y_pred)
+    y_pred = model.predict([X_seq_val, X_open_val])
+    best_threshold, best_f1 = find_best_threshold(y_val, y_pred)
     print(f"Best threshold found: {best_threshold:.2f} with F1 score: {best_f1:.4f}")
 
-    y_pred_binary = (y_pred >= best_threshold).astype(int).flatten()
+    y_pred_binary = (y_pred >= 0.5).astype(int).flatten()
 
     # Evaluation metrics
-    print("Accuracy:", accuracy_score(y_test, y_pred_binary))
-    print("Precision:", precision_score(y_test, y_pred_binary))
-    print("Recall:", recall_score(y_test, y_pred_binary))
-    print("F1 Score:", f1_score(y_test, y_pred_binary))
+    print("Accuracy:", accuracy_score(y_val, y_pred_binary))
+    print("Precision:", precision_score(y_val, y_pred_binary))
+    print("Recall:", recall_score(y_val, y_pred_binary))
+    print("F1 Score:", f1_score(y_val, y_pred_binary))
 
-    cm = confusion_matrix(y_test, y_pred_binary)
+    cm = confusion_matrix(y_val, y_pred_binary)
     tn, fp, fn, tp = cm.ravel()
     print("Confusion Matrix:")
     print(f"[[TN: {tn}  FP: {fp}]]")
     print(f"[[FN: {fn}  TP: {tp}]]")
     print("Train set class distribution:", np.unique(y_train, return_counts=True))
-    print("Test set class distribution:", np.unique(y_test, return_counts=True))
+    print(" set class distribution:", np.unique(y_val, return_counts=True))
 
     # Plot training curves
     plt.figure(figsize=(12, 5))

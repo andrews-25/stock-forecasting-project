@@ -10,8 +10,11 @@ from tensorflow.keras.models import load_model  #type: ignore
 ticker = 'AAPL'
 config = {
     'seed': 100,
-    'train_split': 0.8,
-    'window_size': 30
+    'train_split': 0.7,
+    'val_split': 0.15,
+    'test_split': 0.15,  # 70% train, 15% val, 15% test
+    'window_size': 30,
+    'threshold': None # Not used here, but can be set if needed
 }
 
 # Initialize data handler
@@ -26,13 +29,11 @@ data_handler = LSTMDataHandler(ticker, config)
 # y_test: actual next-day close, used later for evaluation
 
 #Predct next close price
-model = tf.keras.models.load_model('src/lstm_close_model.h5', compile=False)
+model = tf.keras.models.load_model('lstm_close_model.h5', compile=False)
 predicted_close = model.predict([X_seq_test, X_open_test])
 
 #Predict next close direction
 model = tf.keras.models.load_model('lstm_binary_model.h5', compile=False)
 predicted_direction = model.predict([X_seq_test, X_open_test])
 
-print("Predicted close shape:", predicted_close.shape)
-print("Predicted direction shape:", predicted_direction.shape)
-print("First 5 predicted directions (probabilities):", predicted_direction[:5].flatten())
+# Convert predictions to binary signals
