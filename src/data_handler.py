@@ -5,7 +5,6 @@ from dateutil.relativedelta import relativedelta
 import os
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import train_test_split
 
 SAVE_PATH = "data/processed"
 DEFAULT_START = date.today() - relativedelta(years=3)
@@ -13,7 +12,6 @@ DEFAULT_START = date.today() - relativedelta(years=3)
 
 def download_data(ticker, start_date=DEFAULT_START):
     df = yf.download(ticker, start=start_date)
-
     os.makedirs(SAVE_PATH, exist_ok=True)
 
     processed_path = os.path.join(SAVE_PATH, f"{ticker}.pkl")
@@ -41,7 +39,6 @@ class LSTMDataHandler:
         self.df = get_data(ticker, start_date)
         self.features = ['Open', 'High', 'Low', 'Close', 'Volume']
         self.scaler = MinMaxScaler()
-        
 
     def normalize(self):
         split_index = int(len(self.df) * self.config['train_split'])
@@ -81,9 +78,15 @@ class LSTMDataHandler:
         normalized_df = self.normalize()
         X_seq, X_open, y = self.create_sequences(normalized_df)
 
-        test_size = 1 - self.config['train_split']
-        X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test = train_test_split(
-            X_seq, X_open, y, test_size=test_size, shuffle=False
-        )
+        split_index = int(len(X_seq) * self.config['train_split'])
+
+        X_seq_train = X_seq[:split_index]
+        X_seq_test = X_seq[split_index:]
+
+        X_open_train = X_open[:split_index]
+        X_open_test = X_open[split_index:]
+
+        y_train = y[:split_index]
+        y_test = y[split_index:]
 
         return (X_seq_train, X_seq_test, X_open_train, X_open_test, y_train, y_test), self.scaler
