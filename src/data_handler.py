@@ -8,51 +8,66 @@ from sklearn.preprocessing import MinMaxScaler
 from features import Features
 
 SAVE_PATH = "data/processed"
-DEFAULT_START = date.today() - relativedelta(years=5)
+DEFAULT_PERIOD = "5y"
 
 
-def download_data(ticker, start_date=DEFAULT_START):
-    df = yf.download(ticker, start=start_date)
+def download_data(ticker, period=DEFAULT_PERIOD):
+    df = yf.download(ticker, period=period)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     os.makedirs(SAVE_PATH, exist_ok=True)
 
-    processed_path = os.path.join(SAVE_PATH, f"{ticker}.pkl")
+    processed_path = os.path.join(SAVE_PATH, f"{ticker}_{period}.pkl")
     df.to_pickle(processed_path)
 
     print(f"Data for {ticker} downloaded and saved to {processed_path}")
     return df
 
 
-def get_data(ticker, start_date=DEFAULT_START):
-    processed_path = os.path.join(SAVE_PATH, f"{ticker}.pkl")
+def get_data(ticker, period=DEFAULT_PERIOD):
+    processed_path = os.path.join(SAVE_PATH, f"{ticker}_{period}.pkl")
     if os.path.exists(processed_path):
         return pd.read_pickle(processed_path)
     else:
-        download_data(ticker, start_date)
+        download_data(ticker, period)
         return pd.read_pickle(processed_path)
 
 
 class LSTMDataHandler:
-    def __init__(self, ticker, config, start_date=DEFAULT_START, target_type='regression'):
+    def __init__(self, ticker, config, period=DEFAULT_PERIOD, target_type='regression'):
         self.target_type = target_type
         self.ticker = ticker
         self.config = config
-        self.start_date = start_date
-
-
-        raw_df = get_data(ticker, start_date)
+        self.period = period
+        raw_df = get_data(ticker, period)
 
         features = Features(ticker, config['window_size'], raw_df)
-        self.df = features.add_all_features().dropna().reset_index(drop=True)
-
+        self.df = features.add_all_features().dropna().reset_index(drop=True)   
         self.features = ['Open', 'High', 'Low', 'Close', 'Volume', 'Volatility','Bollinger_Upper', 'Bollinger_Lower', 'Z_Score']
         self.scaler = MinMaxScaler()
     def normalize(self):
         split_index = int(len(self.df) * self.config['train_split'])
         train_df = self.df.iloc[:split_index]
 
-        self.scaler.fit(train_df[self.features])
-        scaled = self.scaler.transform(self.df[self.features])
-        normalized_df = pd.DataFrame(scaled, columns=self.features, index=self.df.index)
+      
+        olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume']
+        engineered_features = [f for f in self.features if f not in olhcv_features]
+        
+      
+        self.scaler.fit(train_df[olhcv_features])
+
+      
+        scaled_olhcv = self.scaler.transform(self.df[olhcv_features])
+        scaled_olhcv_df = pd.DataFrame(scaled_olhcv, columns=olhcv_features, index=self.df.index)
+
+  
+        normalized_df = pd.concat([scaled_olhcv_df, self.df[engineered_features]], axis=1)
+        #print("Columns after concatenation:", normalized_df.columns.tolist())
+
+        # Ensure column order matches self.features list
+        normalized_df = normalized_df[self.features]
+
         return normalized_df
 
     def create_sequences(self, normalized_df):

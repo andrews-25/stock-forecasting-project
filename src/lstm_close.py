@@ -14,8 +14,6 @@ import matplotlib.pyplot as plt
 from data_handler import LSTMDataHandler
 import matplotlib.pyplot as plt
 from tensorflow.keras.regularizers import l2  #type: ignore
-import sys
-import time
 #Hyperparameters
 config = {
     #Data
@@ -107,7 +105,7 @@ learning_rate = ReduceLROnPlateau(
     min_lr=config['reduce_lr_min_lr']
 )
 
-print(X_seq_train[6])
+
 history = model.fit(
     [X_seq_train, X_open_train],
     y_train,
@@ -122,13 +120,17 @@ history = model.fit(
 
 #### EVALUATING THE MODEL####
 predicted_close = model.predict([X_seq_val, X_open_val])
-close_index = features.index('Close')
+olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume']
+close_index = olhcv_features.index('Close')  # Index within scaled data
 
-pred_padded = np.zeros((len(predicted_close), len(features)))
-true_padded = np.zeros((len(y_val), len(features)))
+
+pred_padded = np.zeros((len(predicted_close), len(olhcv_features)))
+true_padded = np.zeros((len(y_val), len(olhcv_features)))
+
 
 pred_padded[:, close_index] = predicted_close.flatten()
 true_padded[:, close_index] = y_val.flatten()
+
 
 predicted_close_real = scaler.inverse_transform(pred_padded)[:, close_index]
 y_val_real = scaler.inverse_transform(true_padded)[:, close_index]
@@ -151,6 +153,8 @@ print(f"Mean Absolute Error (MAE): {mae:.4f}")
 print(f"R Squared Score: {r2:.4f}")
 print(f"Average Daily Change: {avg_daily_change:.4f}")
 print(f"Standard Deviation of Daily Change: {std_change:.4f}")
+
+
 plt.figure(figsize=(10, 6))
 plt.plot(history.history['loss'], label='Training Loss')
 plt.plot(history.history['val_loss'], label='Validation Loss')
