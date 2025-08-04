@@ -5,9 +5,10 @@ from dateutil.relativedelta import relativedelta
 import os
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from features import Features
 
 SAVE_PATH = "data/processed"
-DEFAULT_START = date.today() - relativedelta(years=6)
+DEFAULT_START = date.today() - relativedelta(years=5)
 
 
 def download_data(ticker, start_date=DEFAULT_START):
@@ -30,17 +31,21 @@ def get_data(ticker, start_date=DEFAULT_START):
         return pd.read_pickle(processed_path)
 
 
-
 class LSTMDataHandler:
     def __init__(self, ticker, config, start_date=DEFAULT_START, target_type='regression'):
         self.target_type = target_type
         self.ticker = ticker
         self.config = config
         self.start_date = start_date
-        self.df = get_data(ticker, start_date)
-        self.features = ['Open', 'High', 'Low', 'Close', 'Volume']
-        self.scaler = MinMaxScaler()
 
+
+        raw_df = get_data(ticker, start_date)
+
+        features = Features(ticker, config['window_size'], raw_df)
+        self.df = features.add_all_features().dropna().reset_index(drop=True)
+
+        self.features = ['Open', 'High', 'Low', 'Close', 'Volume', 'Volatility','Bollinger_Upper', 'Bollinger_Lower', 'Z_Score']
+        self.scaler = MinMaxScaler()
     def normalize(self):
         split_index = int(len(self.df) * self.config['train_split'])
         train_df = self.df.iloc[:split_index]

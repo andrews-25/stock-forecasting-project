@@ -13,26 +13,36 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 from data_handler import LSTMDataHandler
 import matplotlib.pyplot as plt
+from tensorflow.keras.regularizers import l2  #type: ignore
+import sys
+import time
 #Hyperparameters
 config = {
+    #Data
     'seed': 100,
     'train_split': 0.7,
     'val_split': .15,
     'test_split': .15,                    # 70% train, 15% val, 15% test
-
-    'window_size': 30,             # sequence length for LSTM input
+    'window_size': 30,                     # sequence length for LSTM input
+    #Architecture
     'lstm_units_1': 128,
     'lstm_units_2': 64,
-    'dropout_rate_1': 0.1,
-    'dropout_rate_2': 0.1,
+    'lstm_units_3': 32,
     'dense_units_open': 32,
     'dense_units_concat': 16,
-    'dropout_rate_final': 0.1,
-    'learning_rate': 0.001,
+    #Dropout
+    'dropout_rate_1': 0.25,
+    'dropout_rate_2': 0.25,
+    'dropout_rate_3': 0.25,
+    'dropout_rate_final': 0.25,
+    #Training
+    'learning_rate': 0.008,
     'batch_size': 8,
     'epochs': 1000,
-    'early_stopping_patience': 20,
-    'early_stopping_min_delta': 0.00005,
+    'regularization_strength': 0.0005,
+    #Callbacks
+    'early_stopping_patience': 30,
+    'early_stopping_min_delta': 0.00002,
     'reduce_lr_factor': 0.5,
     'reduce_lr_patience': 10,
     'reduce_lr_min_lr': 1e-6,
@@ -58,14 +68,17 @@ window = config['window_size']
 
 #### BUILDING THE MODEL ####
 lstm_input = Input(shape=(window, len(features)), name='lstm_input')
-lstm_layer1 = LSTM(config['lstm_units_1'], return_sequences=True, name='lstm_layer_1')(lstm_input)
+lstm_layer1 = LSTM(config['lstm_units_1'], return_sequences=True, kernel_regularizer = l2(config['regularization_strength']), name='lstm_layer_1')(lstm_input)
 lstm_layer1_dropout = Dropout(config['dropout_rate_1'], name='lstm_dropout')(lstm_layer1)
-lstm_layer2 = LSTM(config['lstm_units_2'], return_sequences=False, name='lstm_layer_2')(lstm_layer1_dropout)
+lstm_layer2 = LSTM(config['lstm_units_2'], return_sequences=True, kernel_regularizer = l2(config['regularization_strength']), name='lstm_layer_2')(lstm_layer1_dropout)
 lstm_layer2_dropout = Dropout(config['dropout_rate_2'], name='lstm_layer2_dropout')(lstm_layer2)
+lstm_layer3 = LSTM(config['lstm_units_3'], return_sequences=False, kernel_regularizer = l2(config['regularization_strength']), name='lstm_layer_3')(lstm_layer2_dropout)
+lstm_layer3_dropout = Dropout(config['dropout_rate_3'], name='lstm_layer3_dropout')(lstm_layer3)
+
 
 current_open_input = Input(shape=(1,), name='model_input_open')
 dense_open = Dense(config['dense_units_open'], activation='relu', name='open_dense')(current_open_input)
-concat = Concatenate(name='concat')([lstm_layer2_dropout, dense_open])
+concat = Concatenate(name='concat')([lstm_layer3_dropout, dense_open])
 
 model_dense_1 = Dense(config['dense_units_concat'], activation='relu', name='dense_1')(concat)
 model_dropout_2 = Dropout(config['dropout_rate_final'], name='model_dropout')(model_dense_1)
@@ -94,6 +107,7 @@ learning_rate = ReduceLROnPlateau(
     min_lr=config['reduce_lr_min_lr']
 )
 
+print(X_seq_train[6])
 history = model.fit(
     [X_seq_train, X_open_train],
     y_train,
@@ -103,7 +117,7 @@ history = model.fit(
     verbose=1,
     callbacks=[early_stopping, learning_rate]
 )
-model.save('lstm_close_model.h5')
+#model.save('lstm_close_model.h5')
 
 
 #### EVALUATING THE MODEL####
