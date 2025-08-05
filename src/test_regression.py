@@ -16,10 +16,6 @@ def regression_predictions():
     # Load and prepare data
     data_handler = LSTMDataHandler(ticker, config, target_type='regression')
     (X_seq_test, X_open_test, y_test), scaler = data_handler.prepare_data(training=False)
-    (X_seq_train, X_seq_val, X_open_train, X_open_val, y_train, y_val), scaler = data_handler.prepare_data()
-    features = data_handler.features
-    window = config['window_size']
-
 
     model = load_model(f'{ticker}_regression_model.h5', compile=False)
     predicted_close = model.predict([X_seq_test, X_open_test])
@@ -59,7 +55,6 @@ def regression_predictions():
     plt.legend()
     plt.grid(True)
     plt.show()
-
 
 if __name__ == "__main__":
     regression_predictions()

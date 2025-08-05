@@ -41,7 +41,6 @@ class LSTMDataHandler:
         self.config = config
         self.period = period
         raw_df = get_data(ticker, period)
-        self.olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume']
         features = Features(ticker, config['window_size'], raw_df)
         self.df = features.add_all_features().dropna().reset_index(drop=True)   
         self.features = ['Open', 'High', 'Low', 'Close', 'Volume', 'Volatility','Bollinger_Upper', 'Bollinger_Lower', 'Z_Score']
@@ -76,18 +75,18 @@ class LSTMDataHandler:
         input_open = []
         target_list = []
 
-        for i in range(window + 1, len(normalized_df)):
-            seq = normalized_df[self.features].iloc[(i - 1) - window:(i - 1)].values
-            current_open = normalized_df.iloc[i]['Open']
-            current_close = normalized_df.iloc[i]['Close']
+        for i in range(window + 1, len(normalized_df) - 1):
+            seq = normalized_df[self.features].iloc[i - window:i].values
+            next_open = normalized_df.iloc[i + 1]['Open']
+            next_close = normalized_df.iloc[i + 1]['Close']
 
             input_seq.append(seq)
-            input_open.append([current_open])
+            input_open.append([next_open])
 
             if self.target_type == 'regression':
-                target = current_close
+                target = next_close
             elif self.target_type == 'classification':
-                target = 1 if current_close > current_open else 0
+                target = 1 if next_close > next_open else 0
             else:
                 raise ValueError("Invalid target_type. Use 'regression' or 'classification'.")
 
