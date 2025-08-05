@@ -34,16 +34,18 @@ config = {
     'test_split': 0.15,          
     'window_size': 30,            
     #NMetwork
-    'lstm_units_1': 60,
-    'lstm_units_2': 30,
-    'dense_units_open': 20,
+    'lstm_units_1': 128,
+    'lstm_units_2': 64,
+    'lstm_units_3': 32,
+    'dense_units_open': 32,
     'merge_dense_units': 16,
     #Dropout
     'dropout_rate_1': 0.2,
     'dropout_rate_2': 0.2,
+    'dropout_rate_3': 0.2,
     'merge_dropout_rate': 0.2,
     #Training
-    'learning_rate': 0.001,
+    'learning_rate': 0.008,
     'batch_size': 10,
     'epochs': 1000,
     #Callbacks
@@ -85,15 +87,18 @@ window = config['window_size']
 lstm_input = Input(shape=(window, len(features)),name='lstm_input')
 lstm_layer1 = LSTM(config['lstm_units_1'], return_sequences=True, kernel_regularizer = l2(config['regularization_strength']), name='lstm_layer1')(lstm_input)
 lstm_layer1_dropout = Dropout(config['dropout_rate_1'], name='dropout1')(lstm_layer1)
-lstm_out_2 = LSTM(config['lstm_units_2'], return_sequences=False, kernel_regularizer = l2(config['regularization_strength']), name='lstm_layer12')(lstm_layer1_dropout)
-lstm_layer2_dropout = Dropout(config['dropout_rate_2'], name='dropout2')(lstm_out_2)
+lstm_layer2 = LSTM(config['lstm_units_2'], return_sequences=True, kernel_regularizer = l2(config['regularization_strength']), name='lstm_layer12')(lstm_layer1_dropout)
+lstm_layer2_dropout = Dropout(config['dropout_rate_2'], name='dropout2')(lstm_layer2)
+lstm_layer3 = LSTM(config['lstm_units_3'], return_sequences=False, kernel_regularizer = l2(config['regularization_strength']), name='lstm_layer3')(lstm_layer2_dropout)
+lstm_layer3_dropout = Dropout(config['dropout_rate_3'], name='dropout3')(lstm_layer3)
+
 
 #Dense layer for today's open price
 open_input = Input(shape=(1,), name='open_input')
 open_dense = Dense(config['dense_units_open'], activation='relu', name='dense_open')(open_input)
 
 #merge the outputs
-concat = Concatenate(name='concat')([lstm_layer2_dropout, open_dense])
+concat = Concatenate(name='concat')([lstm_layer3_dropout, open_dense])
 merge = Dense(config['merge_dense_units'], activation='relu', name='dense_concat')(concat)
 merge_dropout = Dropout(config['merge_dropout_rate'], name='dropout_merge')(merge)
 
@@ -123,7 +128,8 @@ focal_loss = FocalLoss(alpha = alpha, gamma = gamma)
 def weighted_loss(y_true, y_pred):
     bce = bce_loss(y_true, y_pred)
     focal = focal_loss(y_true, y_pred)
-    return .8*bce + .2*focal
+    return .6*bce + .4*focal
+
 
 model.compile(
     optimizer=Adam(learning_rate=config['learning_rate']),
@@ -144,6 +150,12 @@ learning_rate = ReduceLROnPlateau(
     min_lr=config['reduce_lr_min_lr'],
     verbose=1
 )
+class_weights = class_weight.compute_class_weight(
+    class_weight='balanced',
+    classes=np.unique(y_train.flatten()),
+    y=y_train.flatten()
+)
+class_weights_dict = dict(enumerate(class_weights))
 
 
 if __name__ == "__main__":
@@ -156,6 +168,7 @@ if __name__ == "__main__":
         batch_size=config['batch_size'],
         callbacks=[early_stopping, learning_rate],
         verbose=1,
+        class_weight = class_weights_dict
     )
 
     # Save the trained model
@@ -166,7 +179,7 @@ if __name__ == "__main__":
     best_threshold, best_f1 = find_best_threshold(y_val, y_pred)
     print(f"Best threshold found: {best_threshold:.2f} with F1 score: {best_f1:.4f}")
 
-    y_pred_binary = (y_pred >= 0.5).astype(int).flatten()
+    y_pred_binary = (y_pred >= best_threshold).astype(int).flatten()
 
     # Evaluation metrics
     print("Accuracy:", accuracy_score(y_val, y_pred_binary))
@@ -200,4 +213,8 @@ if __name__ == "__main__":
     plt.ylabel('Accuracy')
     plt.legend()
     plt.grid(True)
+    plt.show()
+
+    plt.hist(y_pred, bins=50)
+    plt.title("Distribution of predicted probabilities")
     plt.show()
