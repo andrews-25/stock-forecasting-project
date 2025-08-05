@@ -41,7 +41,7 @@ class LSTMDataHandler:
         self.config = config
         self.period = period
         raw_df = get_data(ticker, period)
-
+        self.olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume']
         features = Features(ticker, config['window_size'], raw_df)
         self.df = features.add_all_features().dropna().reset_index(drop=True)   
         self.features = ['Open', 'High', 'Low', 'Close', 'Volume', 'Volatility','Bollinger_Upper', 'Bollinger_Lower', 'Z_Score']
