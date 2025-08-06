@@ -12,7 +12,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 from data_handler import LSTMDataHandler
 from tensorflow.keras.regularizers import l2    #type: ignore
-
+import sys
 config = {
     'seed': 100,
     'train_split': 0.7,
@@ -108,7 +108,7 @@ def train_and_evaluate(ticker, config):
     model.save(f'{ticker}_regression_model.h5')
 
     predicted_close = model.predict([X_seq_val, X_open_val])
-    olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume']
+    olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA_5', 'SMA_40']
     close_index = olhcv_features.index('Close')
 
     pred_padded = np.zeros((len(predicted_close), len(olhcv_features)))
@@ -150,6 +150,7 @@ def train_and_evaluate(ticker, config):
     plt.plot(y_val_real, label='Actual Close Price', color='blue')
     plt.plot(predicted_close_real, label='Predicted Close Price', color='orange')
     plt.title('Actual vs Predicted Close Price')
+    sys.exit()
     plt.xlabel('Time Steps')
     plt.ylabel('Close Price')
     plt.legend()
@@ -158,4 +159,6 @@ def train_and_evaluate(ticker, config):
 
 if __name__ == "__main__":
     ticker = input("Enter Ticker: ").upper()
+    #build_model()
     train_and_evaluate(ticker, config)
+

@@ -1,9 +1,7 @@
 import yfinance as yf
 import pandas as pd
-from datetime import date
-from dateutil.relativedelta import relativedelta
-import os
 import numpy as np
+import os
 from sklearn.preprocessing import MinMaxScaler
 from features import Features
 
@@ -17,10 +15,8 @@ def download_data(ticker, period=DEFAULT_PERIOD):
         df.columns = df.columns.get_level_values(0)
 
     os.makedirs(SAVE_PATH, exist_ok=True)
-
     processed_path = os.path.join(SAVE_PATH, f"{ticker}_{period}.pkl")
     df.to_pickle(processed_path)
-
     print(f"Data for {ticker} downloaded and saved to {processed_path}")
     return df
 
@@ -40,34 +36,46 @@ class LSTMDataHandler:
         self.ticker = ticker
         self.config = config
         self.period = period
+
+        # Load raw data
         raw_df = get_data(ticker, period)
-        features = Features(ticker, config['window_size'], raw_df)
-        self.df = features.add_all_features().dropna().reset_index(drop=True)   
-        self.features = ['Open', 'High', 'Low', 'Close', 'Volume', 'Volatility','Bollinger_Upper', 'Bollinger_Lower', 'Z_Score']
+
+        # Compute all features
+        features_obj = Features(ticker, config['window_size'], raw_df)
+        features_obj.add_normalized_features()
+        features_obj.add_unnormalized_features()
+        self.df = features_obj.df.dropna().reset_index(drop=True)
+
+        # Initialize scaler
         self.scaler = MinMaxScaler()
+
+        # Define normalized and unnormalized feature sets
+        self.normalized_features = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA_5', 'SMA_40']
+        self.unnormalized_features = ['Volatility','Bollinger_Upper','Bollinger_Lower',
+                                      'Z_Score','RSI','MACD','MACD_Hist']
+
+        # Combine for sequence creation
+        self.features = self.normalized_features + self.unnormalized_features
+
     def normalize(self):
+        # Split training set for fitting scaler
         split_index = int(len(self.df) * self.config['train_split'])
         train_df = self.df.iloc[:split_index]
 
-      
-        olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume']
-        engineered_features = [f for f in self.features if f not in olhcv_features]
-        
-      
-        self.scaler.fit(train_df[olhcv_features])
+        # Fit scaler on normalized features
+        self.scaler.fit(train_df[self.normalized_features])
 
-      
-        scaled_olhcv = self.scaler.transform(self.df[olhcv_features])
-        scaled_olhcv_df = pd.DataFrame(scaled_olhcv, columns=olhcv_features, index=self.df.index)
+        # Scale normalized features
+        scaled_data = self.scaler.transform(self.df[self.normalized_features])
+        scaled_df = pd.DataFrame(scaled_data, columns=self.normalized_features, index=self.df.index)
 
-  
-        normalized_df = pd.concat([scaled_olhcv_df, self.df[engineered_features]], axis=1)
-        #print("Columns after concatenation:", normalized_df.columns.tolist())
+        # Concatenate with unnormalized features
+        final_df = pd.concat([scaled_df, self.df[self.unnormalized_features]], axis=1)
 
-        # Ensure column order matches self.features list
-        normalized_df = normalized_df[self.features]
+        # Ensure correct column order
+        final_df = final_df[self.features]
 
-        return normalized_df
+        return final_df
 
     def create_sequences(self, normalized_df):
         window = self.config['window_size']
@@ -95,24 +103,25 @@ class LSTMDataHandler:
         return np.array(input_seq), np.array(input_open), np.array(target_list)
 
     def prepare_data(self, normalize=True, training=True):
-        if normalize:
-            df = self.normalize()
-        else:
-            df = self.df[self.features].copy()
+        # Normalize if requested
+        df = self.normalize() if normalize else self.df[self.features].copy()
+
+        # Create sequences
         X_seq, X_open, y = self.create_sequences(df)
 
-        #get train split index
+        # Split into train/val/test
         train_split_index = int(len(X_seq) * self.config['train_split'])
+        val_split_index = int(len(X_seq) * (self.config['train_split'] + self.config['val_split']))
+        test_split_index = len(X_seq)
+
         X_seq_train = X_seq[:train_split_index]
         X_open_train = X_open[:train_split_index]
         y_train = y[:train_split_index]
-        #get validation split index
-        val_split_index = int(len(X_seq) * (self.config['train_split'] + self.config['val_split']))
+
         X_seq_val = X_seq[train_split_index:val_split_index]
         X_open_val = X_open[train_split_index:val_split_index]
         y_val = y[train_split_index:val_split_index]
-        #get test split index
-        test_split_index = int(len(X_seq))
+
         X_seq_test = X_seq[val_split_index:test_split_index]
         X_open_test = X_open[val_split_index:test_split_index]
         y_test = y[val_split_index:test_split_index]
@@ -121,4 +130,3 @@ class LSTMDataHandler:
             return (X_seq_train, X_seq_val, X_open_train, X_open_val, y_train, y_val), self.scaler
         else:
             return (X_seq_test, X_open_test, y_test), self.scaler
-

@@ -3,6 +3,7 @@ from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 from ta.volatility import BollingerBands
 
+
 class Features:
     def __init__(self, ticker, window, df):
         self.ticker = ticker
@@ -28,9 +29,31 @@ class Features:
         rolling_std = self.close.rolling(self.window).std()
         self.df['Z_Score'] = (self.close - rolling_mean) / rolling_std
 
-    def add_all_features(self):
+    def calc_sma(self):
+        self.df['SMA_5'] = self.close.rolling(5).mean()
+        self.df['SMA_40'] = self.close.rolling(40).mean()
+
+    def calc_rsi(self):
+        rsi_indicator = RSIIndicator(close=self.close, window=self.window)
+        self.df['RSI'] = rsi_indicator.rsi()
+
+    def calc_macd(self):
+        macd_indicator = MACD(close=self.close, window_slow=26, window_fast=12, window_sign=9)
+        self.df['MACD'] = macd_indicator.macd_signal()
+        self.df['MACD_Hist'] = macd_indicator.macd_diff()
+
+
+
+    def add_normalized_features(self):
+        self.calc_sma()
+
+
+
+    def add_unnormalized_features(self):
         self.calc_volatility()
         self.calc_bollinger_bands()
         self.calc_z_score()
+        self.calc_rsi()
+        self.calc_macd()
         return self.df
     
