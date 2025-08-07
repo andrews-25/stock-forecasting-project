@@ -3,8 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 from sklearn.preprocessing import MinMaxScaler
-from features import Features
-
+from features import Features  #type: ignore
 SAVE_PATH = "data/processed"
 DEFAULT_PERIOD = "5y"
 
@@ -36,97 +35,171 @@ class LSTMDataHandler:
         self.ticker = ticker
         self.config = config
         self.period = period
+        self.featurelist = ['Close', 'High', 'Low', 'Open', 'Volume', 'SMA_5', 'SMA_40', 'Volatility',
+                             'Bollinger_Upper', 'Bollinger_Lower', 'Z_Score', 'RSI', 'MACD', 'MACD_Hist']
+        
+        self.unnormalized_features = ['Volatility', 'Bollinger_Upper', 'Bollinger_Lower', 'Z_Score', 'RSI', 'MACD', 'MACD_Hist']
+        self.feature_scaler = None
+        self.nextopen_scaler = None
+        self.nextclose_scaler = None
+        self.dates = None
 
-        # Load raw data
-        raw_df = get_data(ticker, period)
+    def retrieve_data(self):
+        raw_data = get_data(self.ticker)
+        features = Features(self.ticker, self.config['window_size'], raw_data)
+        features_data = features.add_features()
+        all_data = pd.concat([raw_data, features_data], axis=1)
+        all_data = all_data.loc[:,~all_data.columns.duplicated()]
+        all_data = all_data.dropna().reset_index()
+        return all_data
 
-        # Compute all features
-        features_obj = Features(ticker, config['window_size'], raw_df)
-        features_obj.add_normalized_features()
-        features_obj.add_unnormalized_features()
-        self.df = features_obj.df.dropna().reset_index(drop=True)
+    def split_datasets(self, all_data):
+        train = self.config['train_split']
+        val = self.config['val_split']
 
-        # Initialize scaler
-        self.scaler = MinMaxScaler()
+        train_index = int(train*len(all_data))
+        val_index = int((train + val)*len(all_data))
 
-        # Define normalized and unnormalized feature sets
-        self.normalized_features = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA_5', 'SMA_40']
-        self.unnormalized_features = ['Volatility','Bollinger_Upper','Bollinger_Lower',
-                                      'Z_Score','RSI','MACD','MACD_Hist']
+        train_data = all_data[:train_index]
+        val_data = all_data[train_index:val_index]
+        test_data = all_data[val_index:]
+        return train_data, val_data, test_data
 
-        # Combine for sequence creation
-        self.features = self.normalized_features + self.unnormalized_features
+    def seperate_data_bytype(self, split_dataset): #Seperates into features, next open, and nex close
+        next_open = split_dataset['Open'].shift(-1)   # Open at t+1
+        next_close = split_dataset['Close'].shift(-1) # Close at t+1
 
-    def normalize(self):
-        # Split training set for fitting scaler
-        split_index = int(len(self.df) * self.config['train_split'])
-        train_df = self.df.iloc[:split_index]
+        all_features = split_dataset.iloc[:-1]        
+        next_open = next_open[:-1]           
+        next_close = next_close[:-1]
 
-        # Fit scaler on normalized features
-        self.scaler.fit(train_df[self.normalized_features])
+        return all_features, next_open, next_close
+    
+    def set_scalers(self, training_data):
+        features, next_open, next_close = self.seperate_data_bytype(training_data)
+        #since were only getting scalers here we dont need a "Scalers to not normalize" variable
+        features_to_normalize = [f for f in self.featurelist if f not in self.unnormalized_features]
+        self.features_scaler = MinMaxScaler()
+        self.nextopen_scaler = MinMaxScaler()
+        self.nextclose_scaler = MinMaxScaler()
 
-        # Scale normalized features
-        scaled_data = self.scaler.transform(self.df[self.normalized_features])
-        scaled_df = pd.DataFrame(scaled_data, columns=self.normalized_features, index=self.df.index)
+        self.features_scaler.fit(features[features_to_normalize])
+        self.nextopen_scaler.fit(next_open.values.reshape(-1,1))
+        self.nextclose_scaler.fit(next_close.values.reshape(-1,1))
 
-        # Concatenate with unnormalized features
-        final_df = pd.concat([scaled_df, self.df[self.unnormalized_features]], axis=1)
+    def get_scalers(self):
+        return self.features_scaler, self.nextopen_scaler, self.nextclose_scaler
 
-        # Ensure correct column order
-        final_df = final_df[self.features]
+    def transform(self, data, datatype='features', inverse=False):
+        data = data.copy()
+        datatype = datatype.lower()
 
-        return final_df
+        def ensure_2d(x):
+            if isinstance(x, pd.Series):
+                return x.values.reshape(-1, 1)
+            elif isinstance(x, np.ndarray) and x.ndim == 1:
+                return x.reshape(-1, 1)
+            return x
 
-    def create_sequences(self, normalized_df):
-        window = self.config['window_size']
-        input_seq = []
-        input_open = []
-        target_list = []
-
-        for i in range(window + 1, len(normalized_df) - 1):
-            seq = normalized_df[self.features].iloc[i - window:i].values
-            next_open = normalized_df.iloc[i + 1]['Open']
-            next_close = normalized_df.iloc[i + 1]['Close']
-
-            input_seq.append(seq)
-            input_open.append([next_open])
-
-            if self.target_type == 'regression':
-                target = next_close
-            elif self.target_type == 'classification':
-                target = 1 if next_close > next_open else 0
+        if not inverse:
+            if datatype == 'features':
+                features_to_normalize = [f for f in self.featurelist if f not in self.unnormalized_features]
+                data[features_to_normalize] = self.features_scaler.transform(data[features_to_normalize])
+                return data
+            elif datatype == 'open' or datatype == 'nextopen':
+                return self.nextopen_scaler.transform(ensure_2d(data))
+            elif datatype == 'close' or datatype == 'nextclose':
+                return self.nextclose_scaler.transform(ensure_2d(data))
             else:
-                raise ValueError("Invalid target_type. Use 'regression' or 'classification'.")
-
-            target_list.append(target)
-
-        return np.array(input_seq), np.array(input_open), np.array(target_list)
-
-    def prepare_data(self, normalize=True, training=True):
-        # Normalize if requested
-        df = self.normalize() if normalize else self.df[self.features].copy()
-
-        # Create sequences
-        X_seq, X_open, y = self.create_sequences(df)
-
-        # Split into train/val/test
-        train_split_index = int(len(X_seq) * self.config['train_split'])
-        val_split_index = int(len(X_seq) * (self.config['train_split'] + self.config['val_split']))
-        test_split_index = len(X_seq)
-
-        X_seq_train = X_seq[:train_split_index]
-        X_open_train = X_open[:train_split_index]
-        y_train = y[:train_split_index]
-
-        X_seq_val = X_seq[train_split_index:val_split_index]
-        X_open_val = X_open[train_split_index:val_split_index]
-        y_val = y[train_split_index:val_split_index]
-
-        X_seq_test = X_seq[val_split_index:test_split_index]
-        X_open_test = X_open[val_split_index:test_split_index]
-        y_test = y[val_split_index:test_split_index]
-
-        if training:
-            return (X_seq_train, X_seq_val, X_open_train, X_open_val, y_train, y_val), self.scaler
+                raise ValueError(f"Unknown datatype for transform {datatype}")
         else:
-            return (X_seq_test, X_open_test, y_test), self.scaler
+            if datatype == 'features':
+                features_to_normalize = [f for f in self.featurelist if f not in self.unnormalized_features]
+                data[features_to_normalize] = self.features_scaler.inverse_transform(data[features_to_normalize])
+                return data
+            elif datatype == 'open' or datatype == 'nextopen':
+                return self.nextopen_scaler.inverse_transform(ensure_2d(data))
+            elif datatype == 'close' or datatype == 'nextclose':
+                return self.nextclose_scaler.inverse_transform(ensure_2d(data))
+            else:
+                raise ValueError(f"Unknown datatype for inverse transform {datatype}")
+
+            
+    def create_sequences(self, features, next_close, next_open):
+        # features = np.array(features)
+        # next_close = np.array(next_close)
+        # next_open = np.array(next_open)
+        window_size = self.config['window_size']
+        X, y_close, X_open = [], [], []
+        
+        for i in range(len(features) - window_size):
+            seq_x = features[i:i+window_size].values  # shape: (window_size, num_features)
+            X.append(seq_x)
+            
+            # Targets are the values *immediately after* the window
+            y_close.append(next_close[i + window_size])
+            X_open.append(next_open[i + window_size])
+            
+        return np.array(X), np.array(y_close).reshape(-1, 1), np.array(X_open).reshape(-1, 1)
+
+    def prepare_data(self, testing=False):
+        all_data = self.retrieve_data()
+
+        self.dates = all_data['Date'] if 'Date' in all_data else None    
+
+        train_data, val_data, test_data = self.split_datasets(all_data)
+        
+        train_data = train_data.drop(columns=['Date', 'index'], errors='ignore')
+        val_data = val_data.drop(columns=['Date', 'index'], errors='ignore')
+        test_data = test_data.drop(columns=['Date', 'index'], errors='ignore')
+
+        if testing:
+            test_features, test_next_open, test_next_close = self.seperate_data_bytype(test_data)
+            test_features = self.transform(test_features, datatype='features')
+            test_next_close = self.transform(test_next_close, datatype='close')
+            test_next_open = self.transform(test_next_open, datatype='open')
+
+            test_features, test_next_close = self.create_sequences(test_features, test_next_close)
+
+            return test_features, test_next_open, test_next_close
+        else:
+            self.set_scalers(train_data)
+            train_features, train_next_open, train_next_close = self.seperate_data_bytype(train_data)
+            train_features = self.transform(train_features, datatype='features')
+            train_next_close = self.transform(train_next_close, datatype='close')
+            train_next_open = self.transform(train_next_open, datatype='open')
+
+            val_features, val_next_open, val_next_close = self.seperate_data_bytype(val_data)
+            val_features = self.transform(val_features, datatype='features')
+            val_next_close = self.transform(val_next_close, datatype='close')
+            val_next_open = self.transform(val_next_open, datatype='open')
+
+        
+
+            train_features, train_next_close, train_next_open = self.create_sequences(train_features, train_next_close, train_next_open)
+            val_features, val_next_close, val_next_open = self.create_sequences(val_features, val_next_close, val_next_open)
+
+            
+            val_dates = self.dates[len(train_data) : len(train_data) + len(val_data)]
+            val_dates = val_dates[self.config['window_size']:]
+
+
+            return train_features, train_next_open, train_next_close, val_features, val_next_open, val_next_close, val_dates
+
+
+
+        
+        
+
+
+
+
+
+
+        
+
+
+        
+
+
+        

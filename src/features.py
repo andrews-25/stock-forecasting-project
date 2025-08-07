@@ -43,13 +43,8 @@ class Features:
         self.df['MACD_Hist'] = macd_indicator.macd_diff()
 
 
-
-    def add_normalized_features(self):
+    def add_features(self):
         self.calc_sma()
-
-
-
-    def add_unnormalized_features(self):
         self.calc_volatility()
         self.calc_bollinger_bands()
         self.calc_z_score()

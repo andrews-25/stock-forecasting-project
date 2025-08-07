@@ -3,16 +3,17 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import random
 import tensorflow as tf
-from tensorflow.keras.models import Model   #type: ignore
-from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Concatenate    #type: ignore
-from tensorflow.keras.optimizers import Adam    #type: ignore
-from tensorflow.keras.losses import Huber   #type: ignore
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau #type: ignore
+from tensorflow.keras.models import Model   # type: ignore
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Concatenate  # type: ignore
+from tensorflow.keras.optimizers import Adam  # type: ignore
+from tensorflow.keras.losses import Huber  # type: ignore
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau  # type: ignore
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 from data_handler import LSTMDataHandler
-from tensorflow.keras.regularizers import l2    #type: ignore
+from tensorflow.keras.regularizers import l2  # type: ignore
 import sys
+
 config = {
     'seed': 100,
     'train_split': 0.7,
@@ -41,26 +42,25 @@ config = {
 
 def build_model(window, features, config):
     lstm_input = Input(shape=(window, len(features)), name='lstm_input')
-    lstm_layer1 = LSTM(config['lstm_units_1'], return_sequences=True, kernel_regularizer=l2(config['regularization_strength']), name='lstm_layer_1')(lstm_input)
-    lstm_layer1_dropout = Dropout(config['dropout_rate_1'], name='lstm_dropout')(lstm_layer1)
-    lstm_layer2 = LSTM(config['lstm_units_2'], return_sequences=True, kernel_regularizer=l2(config['regularization_strength']), name='lstm_layer_2')(lstm_layer1_dropout)
-    lstm_layer2_dropout = Dropout(config['dropout_rate_2'], name='lstm_layer2_dropout')(lstm_layer2)
-    lstm_layer3 = LSTM(config['lstm_units_3'], return_sequences=False, kernel_regularizer=l2(config['regularization_strength']), name='lstm_layer_3')(lstm_layer2_dropout)
-    lstm_layer3_dropout = Dropout(config['dropout_rate_3'], name='lstm_layer3_dropout')(lstm_layer3)
+    x = LSTM(config['lstm_units_1'], return_sequences=True, kernel_regularizer=l2(config['regularization_strength']))(lstm_input)
+    x = Dropout(config['dropout_rate_1'])(x)
+    x = LSTM(config['lstm_units_2'], return_sequences=True, kernel_regularizer=l2(config['regularization_strength']))(x)
+    x = Dropout(config['dropout_rate_2'])(x)
+    x = LSTM(config['lstm_units_3'], return_sequences=False, kernel_regularizer=l2(config['regularization_strength']))(x)
+    x = Dropout(config['dropout_rate_3'])(x)
 
     current_open_input = Input(shape=(1,), name='model_input_open')
-    dense_open = Dense(config['dense_units_open'], activation='relu', name='open_dense')(current_open_input)
-    concat = Concatenate(name='concat')([lstm_layer3_dropout, dense_open])
+    dense_open = Dense(config['dense_units_open'], activation='relu')(current_open_input)
+    concat = Concatenate()([x, dense_open])
 
-    model_dense_1 = Dense(config['dense_units_concat'], activation='relu', name='dense_1')(concat)
-    model_dropout_2 = Dropout(config['dropout_rate_final'], name='model_dropout')(model_dense_1)
-    model_output = Dense(1, name='model_output')(model_dropout_2)
+    dense = Dense(config['dense_units_concat'], activation='relu')(concat)
+    dense = Dropout(config['dropout_rate_final'])(dense)
+    output = Dense(1)(dense)
 
-    model = Model(inputs=[lstm_input, current_open_input], outputs=model_output, name='ClosePredictorLSTM')
+    model = Model(inputs=[lstm_input, current_open_input], outputs=output)
 
     opt = Adam(learning_rate=config['learning_rate'])
     model.compile(opt, loss=Huber(delta=1.0), metrics=['mae'])
-
     return model
 
 def train_and_evaluate(ticker, config):
@@ -68,32 +68,31 @@ def train_and_evaluate(ticker, config):
     np.random.seed(config['seed'])
     tf.random.set_seed(config['seed'])
     os.environ['TF_DETERMINISTIC_OPS'] = '1'
-    print("TensorFlow version:", tf.__version__)
-    gpus = tf.config.list_physical_devices('GPU')
-    print("Using device:", "GPU" if gpus else "CPU")
 
     data_handler = LSTMDataHandler(ticker, config, target_type='regression')
-    (X_seq_train, X_seq_val, X_open_train, X_open_val, y_train, y_val), scaler = data_handler.prepare_data()
-    features = data_handler.features
+
+    X_seq_train, X_open_train, y_train, X_seq_val, X_open_val, y_val, val_dates = data_handler.prepare_data()
+    features = data_handler.featurelist
     window = config['window_size']
 
     model = build_model(window, features, config)
 
-    early_stopping = EarlyStopping(
-        monitor='val_loss',
-        patience=config['early_stopping_patience'],
-        restore_best_weights=True,
-        min_delta=config['early_stopping_min_delta'],
-        verbose=1
-    )
-
-    reduce_lr = ReduceLROnPlateau(
-        monitor='val_loss',
-        factor=config['reduce_lr_factor'],
-        patience=config['reduce_lr_patience'],
-        verbose=1,
-        min_lr=config['reduce_lr_min_lr']
-    )
+    callbacks = [
+        EarlyStopping(
+            monitor='val_loss',
+            patience=config['early_stopping_patience'],
+            restore_best_weights=True,
+            min_delta=config['early_stopping_min_delta'],
+            verbose=1
+        ),
+        ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=config['reduce_lr_factor'],
+            patience=config['reduce_lr_patience'],
+            verbose=1,
+            min_lr=config['reduce_lr_min_lr']
+        )
+    ]
 
     history = model.fit(
         [X_seq_train, X_open_train],
@@ -102,23 +101,20 @@ def train_and_evaluate(ticker, config):
         epochs=config['epochs'],
         batch_size=config['batch_size'],
         verbose=1,
-        callbacks=[early_stopping, reduce_lr]
+        callbacks=callbacks
     )
 
     model.save(f'{ticker}_regression_model.h5')
 
     predicted_close = model.predict([X_seq_val, X_open_val])
-    olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA_5', 'SMA_40']
-    close_index = olhcv_features.index('Close')
 
-    pred_padded = np.zeros((len(predicted_close), len(olhcv_features)))
-    true_padded = np.zeros((len(y_val), len(olhcv_features)))
+    predicted_close = predicted_close.reshape(-1, 1)
+    y_val = y_val.reshape(-1, 1)
 
-    pred_padded[:, close_index] = predicted_close.flatten()
-    true_padded[:, close_index] = y_val.flatten()
+    feature_scaler, open_scaler, close_scaler = data_handler.get_scalers()
 
-    predicted_close_real = scaler.inverse_transform(pred_padded)[:, close_index]
-    y_val_real = scaler.inverse_transform(true_padded)[:, close_index]
+    predicted_close_real = close_scaler.inverse_transform(predicted_close).flatten()
+    y_val_real = close_scaler.inverse_transform(y_val).flatten()
 
     mse = mean_squared_error(y_val_real, predicted_close_real)
     mae = mean_absolute_error(y_val_real, predicted_close_real)
@@ -127,8 +123,9 @@ def train_and_evaluate(ticker, config):
     std_change = np.std(np.diff(y_val_real))
 
     print("Sample predictions vs actual (denormalized):")
-    for i in range(5):
+    for i in range(min(5, len(predicted_close_real))):
         print(f"Predicted: ${predicted_close_real[i]:.2f} | Actual: ${y_val_real[i]:.2f}")
+
     print(f"\nModel Performance:")
     print(f"Mean Squared Error (MSE): {mse:.4f}")
     print(f"Mean Absolute Error (MAE): {mae:.4f}")
@@ -146,19 +143,21 @@ def train_and_evaluate(ticker, config):
     plt.grid(True)
     plt.show()
 
+    val_dates = val_dates[:len(y_val_real)]
+
     plt.figure(figsize=(10, 6))
-    plt.plot(y_val_real, label='Actual Close Price', color='blue')
-    plt.plot(predicted_close_real, label='Predicted Close Price', color='orange')
+    plt.plot(val_dates, y_val_real, label='Actual Close Price', color='blue')
+    plt.plot(val_dates, predicted_close_real, label='Predicted Close Price', color='orange')
     plt.title('Actual vs Predicted Close Price')
-    sys.exit()
-    plt.xlabel('Time Steps')
+    plt.xlabel('Date')
     plt.ylabel('Close Price')
+    plt.xticks(rotation=45)
     plt.legend()
     plt.grid(True)
+    plt.tight_layout()
     plt.show()
+
 
 if __name__ == "__main__":
     ticker = input("Enter Ticker: ").upper()
-    #build_model()
     train_and_evaluate(ticker, config)
-
