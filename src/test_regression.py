@@ -1,5 +1,5 @@
 from lstm_regression import config
-from data_handler import LSTMDataHandler
+from data_handler import DataHandler
 from tensorflow.keras.models import load_model #type: ignore
 import random
 import os
@@ -14,23 +14,28 @@ def regression_predictions():
     ticker = input("Enter Ticker: ").upper()
 
     # Load and prepare data
-    data_handler = LSTMDataHandler(ticker, config, target_type='regression')
-    (X_seq_test, X_open_test, y_test), scaler = data_handler.prepare_data(training=False)
+    data_handler = DataHandler(ticker, config)
+    (X_seq_test, X_open_test, y_test) = data_handler.prepare_data(testing=True)
 
     model = load_model(f'{ticker}_regression_model.h5', compile=False)
     predicted_close = model.predict([X_seq_test, X_open_test])
     
-    olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume']
-    close_index = olhcv_features.index('Close')
+    # olhcv_features = ['Open', 'High', 'Low', 'Close', 'Volume']
+    # close_index = olhcv_features.index('Close')
 
-    pred_padded = np.zeros((len(predicted_close), len(olhcv_features)))
-    true_padded = np.zeros((len(y_test), len(olhcv_features)))
+    # pred_padded = np.zeros((len(predicted_close), len(olhcv_features)))
+    # true_padded = np.zeros((len(y_test), len(olhcv_features)))
 
-    pred_padded[:, close_index] = predicted_close.flatten()
-    true_padded[:, close_index] = y_test.flatten()
+    # pred_padded[:, close_index] = predicted_close.flatten()
+    # true_padded[:, close_index] = y_test.flatten()
 
-    predicted_close_real = scaler.inverse_transform(pred_padded)[:, close_index]
-    y_test_real = scaler.inverse_transform(true_padded)[:, close_index]
+    #predicted_close_real = data_handler.scaler.inverse_transform(pred_padded)[:, close_index]
+    predicted_close_real = data_handler.transform(predicted_close, datatype='close', inverse =True)
+    #y_test_real = data_handler.scaler.inverse_transform(true_padded)[:, close_index]
+    y_test_real = data_handler.transform(y_test, datatype = 'close', inverse = True)
+    
+    y_test_real = y_test_real.flatten()
+    
 
     mse = mean_squared_error(y_test_real, predicted_close_real)
     mae = mean_absolute_error(y_test_real, predicted_close_real)

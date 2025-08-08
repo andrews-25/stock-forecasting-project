@@ -10,7 +10,7 @@ from tensorflow.keras.losses import Huber  # type: ignore
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau  # type: ignore
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
-from data_handler import LSTMDataHandler
+from data_handler import DataHandler
 from tensorflow.keras.regularizers import l2  # type: ignore
 import sys
 
@@ -19,11 +19,11 @@ config = {
     'train_split': 0.7,
     'val_split': .15,
     'test_split': .15,
-    'window_size': 30,
+    'window_size': 20,
     'lstm_units_1': 128,
     'lstm_units_2': 64,
     'lstm_units_3': 32,
-    'dense_units_open': 32,
+    'dense_units_open': 32, 
     'dense_units_concat': 16,
     'dropout_rate_1': 0.25,
     'dropout_rate_2': 0.25,
@@ -32,7 +32,7 @@ config = {
     'learning_rate': 0.008,
     'batch_size': 8,
     'epochs': 1000,
-    'regularization_strength': 0.0005,
+    'regularization_strength': 5e-4,
     'early_stopping_patience': 30,
     'early_stopping_min_delta': 0.00002,
     'reduce_lr_factor': 0.5,
@@ -69,7 +69,7 @@ def train_and_evaluate(ticker, config):
     tf.random.set_seed(config['seed'])
     os.environ['TF_DETERMINISTIC_OPS'] = '1'
 
-    data_handler = LSTMDataHandler(ticker, config, target_type='regression')
+    data_handler = DataHandler(ticker, config)
 
     X_seq_train, X_open_train, y_train, X_seq_val, X_open_val, y_val, val_dates = data_handler.prepare_data()
     features = data_handler.featurelist

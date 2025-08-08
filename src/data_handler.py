@@ -4,6 +4,7 @@ import numpy as np
 import os
 from sklearn.preprocessing import MinMaxScaler
 from features import Features  #type: ignore
+from tensorflow.keras.models import load_model #type: ignore
 SAVE_PATH = "data/processed"
 DEFAULT_PERIOD = "5y"
 
@@ -29,9 +30,8 @@ def get_data(ticker, period=DEFAULT_PERIOD):
         return pd.read_pickle(processed_path)
 
 
-class LSTMDataHandler:
-    def __init__(self, ticker, config, period=DEFAULT_PERIOD, target_type='regression'):
-        self.target_type = target_type
+class DataHandler:
+    def __init__(self, ticker, config, period=DEFAULT_PERIOD):
         self.ticker = ticker
         self.config = config
         self.period = period
@@ -142,7 +142,7 @@ class LSTMDataHandler:
             
         return np.array(X), np.array(y_close).reshape(-1, 1), np.array(X_open).reshape(-1, 1)
 
-    def prepare_data(self, testing=False):
+    def prepare_data(self, testing=False, XGBoost = False):
         all_data = self.retrieve_data()
 
         self.dates = all_data['Date'] if 'Date' in all_data else None    
@@ -152,18 +152,35 @@ class LSTMDataHandler:
         train_data = train_data.drop(columns=['Date', 'index'], errors='ignore')
         val_data = val_data.drop(columns=['Date', 'index'], errors='ignore')
         test_data = test_data.drop(columns=['Date', 'index'], errors='ignore')
-
+        self.set_scalers(train_data)
         if testing:
             test_features, test_next_open, test_next_close = self.seperate_data_bytype(test_data)
             test_features = self.transform(test_features, datatype='features')
             test_next_close = self.transform(test_next_close, datatype='close')
             test_next_open = self.transform(test_next_open, datatype='open')
 
-            test_features, test_next_close = self.create_sequences(test_features, test_next_close)
+            if XGBoost:
+                lstm = load_model(f'{self.ticker}_regression_model.h5', compile = False)
 
-            return test_features, test_next_open, test_next_close
-        else:
-            self.set_scalers(train_data)
+                #Get Training Data
+                temp_test_features, test_next_close, test_next_open = self.create_sequences(test_features, test_next_close, test_next_open)
+
+                test_pred_close = lstm.predict([temp_test_features, test_next_open])
+                last_timestep_features = temp_test_features[:, -1, :]  
+                df_features = pd.DataFrame(last_timestep_features, columns=self.featurelist)
+
+                df_next_open = pd.Series(test_next_open.flatten(), name='next_open')
+                df_pred_close = pd.Series(test_pred_close.flatten(), name='next_close')
+
+                XGBoost_test_data = pd.concat([df_features, df_next_open, df_pred_close], axis=1)
+
+                return XGBoost_test_data, test_next_close
+
+            else: #else XGBoost = False
+                test_features, test_next_close, test_next_open = self.create_sequences(test_features, test_next_close, test_next_open)
+
+                return test_features, test_next_open, test_next_close
+        else: #else testing
             train_features, train_next_open, train_next_close = self.seperate_data_bytype(train_data)
             train_features = self.transform(train_features, datatype='features')
             train_next_close = self.transform(train_next_close, datatype='close')
@@ -174,32 +191,47 @@ class LSTMDataHandler:
             val_next_close = self.transform(val_next_close, datatype='close')
             val_next_open = self.transform(val_next_open, datatype='open')
 
-        
-
-            train_features, train_next_close, train_next_open = self.create_sequences(train_features, train_next_close, train_next_open)
-            val_features, val_next_close, val_next_open = self.create_sequences(val_features, val_next_close, val_next_open)
-
-            
             val_dates = self.dates[len(train_data) : len(train_data) + len(val_data)]
             val_dates = val_dates[self.config['window_size']:]
+    
+
+            #XGBoost needs: features, open (t+1), and pred_close(t+1) all in one vector
+            #NOTE: train feautures is a temp value becaue XGBoost takes in vectors, not sequcnes data s inputs, next_open is not temp because create_sequences only aligns
+            #it with the features data, not sequentializes it. Since sequcentializing data chops the first n-window_size points off of the data, pred_close will also have 
+            #the first n-windows_size points chopped off, and so we must chop the same number off our XGboost input uunsequentialized data also, to align with the other data points
+            if XGBoost:
+                lstm = load_model(f'{self.ticker}_regression_model.h5', compile = False)
+
+                #Get Training Data
+                temp_train_features, train_next_close, train_next_open = self.create_sequences(train_features, train_next_close, train_next_open)
+
+                train_pred_close = lstm.predict([temp_train_features, train_next_open])
+                last_timestep_features = temp_train_features[:, -1, :]  
+                df_features = pd.DataFrame(last_timestep_features, columns=self.featurelist)
+
+                df_next_open = pd.Series(train_next_open.flatten(), name='next_open')
+                df_pred_close = pd.Series(train_pred_close.flatten(), name='next_close')
+
+                XGBoost_train_data = pd.concat([df_features, df_next_open, df_pred_close], axis=1)
+
+                #Get Val Data:
+                temp_val_features, val_next_close, val_next_open = self.create_sequences(val_features, val_next_close, val_next_open)
+                val_pred_close = lstm.predict([temp_val_features, val_next_open])
+                val_last_timestep_features = temp_val_features[:, -1, :]  
+                val_df_features = pd.DataFrame(val_last_timestep_features, columns=self.featurelist)
+
+                val_df_next_open = pd.Series(val_next_open.flatten(), name='next_open')
+                val_df_pred_close = pd.Series(val_pred_close.flatten(), name='next_close')
+
+                XGBoost_val_data = pd.concat([val_df_features, val_df_next_open, val_df_pred_close], axis=1)
+
+                return XGBoost_train_data, XGBoost_val_data, train_next_close, val_next_close
+
+            else:
+
+                train_features, train_next_close, train_next_open = self.create_sequences(train_features, train_next_close, train_next_open)
+                val_features, val_next_close, val_next_open = self.create_sequences(val_features, val_next_close, val_next_open)
+
+                return train_features, train_next_open, train_next_close, val_features, val_next_open, val_next_close, val_dates
 
 
-            return train_features, train_next_open, train_next_close, val_features, val_next_open, val_next_close, val_dates
-
-
-
-        
-        
-
-
-
-
-
-
-        
-
-
-        
-
-
-        
