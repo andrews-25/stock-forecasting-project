@@ -38,6 +38,7 @@ config = {
     'reduce_lr_factor': 0.5,
     'reduce_lr_patience': 10,
     'reduce_lr_min_lr': 1e-6,
+    'period': '13y'
 }
 
 def build_model(window, features, config):
@@ -69,7 +70,7 @@ def train_and_evaluate(ticker, config):
     tf.random.set_seed(config['seed'])
     os.environ['TF_DETERMINISTIC_OPS'] = '1'
 
-    data_handler = DataHandler(ticker, config)
+    data_handler = DataHandler(ticker, config, period = config['period'])
 
     X_seq_train, X_open_train, y_train, X_seq_val, X_open_val, y_val, val_dates = data_handler.prepare_data()
     features = data_handler.featurelist
@@ -104,7 +105,7 @@ def train_and_evaluate(ticker, config):
         callbacks=callbacks
     )
 
-    model.save(f'{ticker}_regression_model.h5')
+    model.save(f'{ticker}_regression_model_{config['period']}.h5')
 
     predicted_close = model.predict([X_seq_val, X_open_val])
 

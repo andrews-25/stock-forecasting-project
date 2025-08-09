@@ -45,7 +45,7 @@ class DataHandler:
         self.dates = None
 
     def retrieve_data(self):
-        raw_data = get_data(self.ticker)
+        raw_data = get_data(self.ticker, self.period)
         features = Features(self.ticker, self.config['window_size'], raw_data)
         features_data = features.add_features()
         all_data = pd.concat([raw_data, features_data], axis=1)
@@ -160,7 +160,8 @@ class DataHandler:
             test_next_open = self.transform(test_next_open, datatype='open')
 
             if XGBoost:
-                lstm = load_model(f'{self.ticker}_regression_model.h5', compile = False)
+                x = 1
+                lstm = load_model(f'{self.ticker}_regression_model_{self.period}.h5', compile = False)
 
                 #Get Training Data
                 temp_test_features, test_next_close, test_next_open = self.create_sequences(test_features, test_next_close, test_next_open)
@@ -170,11 +171,14 @@ class DataHandler:
                 df_features = pd.DataFrame(last_timestep_features, columns=self.featurelist)
 
                 df_next_open = pd.Series(test_next_open.flatten(), name='next_open')
-                df_pred_close = pd.Series(test_pred_close.flatten(), name='next_close')
+                df_pred_close = pd.Series(test_pred_close.flatten(), name='next_close').shift(-x)
 
                 XGBoost_test_data = pd.concat([df_features, df_next_open, df_pred_close], axis=1)
+                x_test = XGBoost_test_data.dropna().reset_index(drop=True)
 
-                return XGBoost_test_data, test_next_close
+                y_test = test_next_close[:-x]
+
+                return x_test, y_test
 
             else: #else XGBoost = False
                 test_features, test_next_close, test_next_open = self.create_sequences(test_features, test_next_close, test_next_open)
@@ -200,32 +204,40 @@ class DataHandler:
             #it with the features data, not sequentializes it. Since sequcentializing data chops the first n-window_size points off of the data, pred_close will also have 
             #the first n-windows_size points chopped off, and so we must chop the same number off our XGboost input uunsequentialized data also, to align with the other data points
             if XGBoost:
-                lstm = load_model(f'{self.ticker}_regression_model.h5', compile = False)
-
+                lstm = load_model(f'{self.ticker}_regression_model_{self.period}.h5', compile = False)
+                x = 1
                 #Get Training Data
-                temp_train_features, train_next_close, train_next_open = self.create_sequences(train_features, train_next_close, train_next_open)
+                temp_train_features, y_train, train_next_open = self.create_sequences(train_features, train_next_close, train_next_open)
 
                 train_pred_close = lstm.predict([temp_train_features, train_next_open])
                 last_timestep_features = temp_train_features[:, -1, :]  
                 df_features = pd.DataFrame(last_timestep_features, columns=self.featurelist)
 
                 df_next_open = pd.Series(train_next_open.flatten(), name='next_open')
-                df_pred_close = pd.Series(train_pred_close.flatten(), name='next_close')
+                df_pred_close = pd.Series(train_pred_close.flatten(), name='next_close').shift(-x)
 
-                XGBoost_train_data = pd.concat([df_features, df_next_open, df_pred_close], axis=1)
+                x_train = pd.concat([df_features, df_next_open, df_pred_close], axis=1)
+                x_train = x_train.dropna().reset_index(drop=True)
 
                 #Get Val Data:
-                temp_val_features, val_next_close, val_next_open = self.create_sequences(val_features, val_next_close, val_next_open)
+                temp_val_features, y_val, val_next_open = self.create_sequences(val_features, val_next_close, val_next_open)
                 val_pred_close = lstm.predict([temp_val_features, val_next_open])
                 val_last_timestep_features = temp_val_features[:, -1, :]  
                 val_df_features = pd.DataFrame(val_last_timestep_features, columns=self.featurelist)
 
                 val_df_next_open = pd.Series(val_next_open.flatten(), name='next_open')
-                val_df_pred_close = pd.Series(val_pred_close.flatten(), name='next_close')
+                val_df_pred_close = pd.Series(val_pred_close.flatten(), name='next_close').shift(-x)
 
-                XGBoost_val_data = pd.concat([val_df_features, val_df_next_open, val_df_pred_close], axis=1)
+                x_val = pd.concat([val_df_features, val_df_next_open, val_df_pred_close], axis=1)
+                x_val = x_val.dropna().reset_index(drop=True)
 
-                return XGBoost_train_data, XGBoost_val_data, train_next_close, val_next_close
+
+                y_train = y_train[:-x]
+
+                y_val = y_val[:-x]
+
+
+                return x_train, x_val, y_train, y_val
 
             else:
 

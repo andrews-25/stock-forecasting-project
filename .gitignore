@@ -38,3 +38,6 @@ checkpoints/
 
 #.h5 model files
 *.h5
+
+src/pred_train
+
