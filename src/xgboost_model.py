@@ -5,32 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 import shap
-lstmconfig = {
-    'seed': 100,
-    'train_split': 0.7,
-    'val_split': .15,
-    'test_split': .15,
-    'window_size': 20,
-    'lstm_units_1': 128,
-    'lstm_units_2': 64,
-    'lstm_units_3': 32,
-    'dense_units_open': 32, 
-    'dense_units_concat': 16,
-    'dropout_rate_1': 0.25,
-    'dropout_rate_2': 0.25,
-    'dropout_rate_3': 0.25,
-    'dropout_rate_final': 0.25,
-    'learning_rate': 0.008,
-    'batch_size': 8,
-    'epochs': 1000,
-    'regularization_strength': 5e-4,
-    'early_stopping_patience': 30,
-    'early_stopping_min_delta': 0.00002,
-    'reduce_lr_factor': 0.5,
-    'reduce_lr_patience': 10,
-    'reduce_lr_min_lr': 1e-6,
-    'period': '10y'
-}
+from lstm_regression import config as lstmconfig
+
 
 params = {
     #'device': 'cuda',
@@ -61,51 +37,47 @@ data_handler = DataHandler(ticker, lstmconfig, period = lstmconfig['period'])
 x_train, x_val, y_train, y_val = data_handler.prepare_data(XGBoost=True)
 
 
+
 # Make sure y_train and y_val are 1D arrays of continuous target prices (no binary labels)
 y_train = y_train.flatten()
 y_val = y_val.flatten()
 
-#df.drop(columns=['column_name'], inplace=True)
 
-featurelist = [ 'Volatility'
-                              ]
+def test_data(x_train, y_train, x_val, y_val):
+    #df.drop(columns=['column_name'], inplace=True)
+    included_features = [ 'Volatility']
+    excluded_features = ['Open', 'Low', 'Close', 'SMA_5', 'Bollinger_Upper', 'MACD_Hist', 'High', 'RSI', 'Z_Score', 'SMA_40', 'Bollinger_Lower', 'MACD', 'Volume']
+    x_train.drop(columns = excluded_features, inplace=True)
+    x_val.drop(columns = excluded_features, inplace=True)
+    # x_train.drop(columns = ['next_open'], inplace=True)
+    # x_val.drop(columns = ['next_open' ], inplace=True)
 
+    x_train['t+2_close'] = x_train['next_close'].shift(-1)
+    x_train = x_train.dropna(subset=['t+2_close']).reset_index(drop=True)
 
-x_train.drop(columns = ['Open', 'Low', 'Close', 'SMA_5', 'Bollinger_Upper', 'MACD_Hist', 'High', 'RSI', 'Z_Score', 'SMA_40', 'Bollinger_Lower', 'MACD', 'Volume'], inplace=True)
-x_val.drop(columns = ['Open', 'Low', 'Close', 'SMA_5', 'Bollinger_Upper', 'MACD_Hist',  'High', 'RSI',  'Z_Score', 'SMA_40', 'Bollinger_Lower', 'MACD', 'Volume'], inplace=True)
-# x_train.drop(columns = ['next_open'], inplace=True)
-# x_val.drop(columns = ['next_open' ], inplace=True)
+    x_val['t+2_close'] = x_val['next_close'].shift(-1)
+    x_val = x_val.dropna(subset=['t+2_close']).reset_index(drop=True)
 
-x_train['t+2_close'] = x_train['next_close'].shift(-1)
-x_train = x_train.dropna(subset=['t+2_close']).reset_index(drop=True)
+    x_train['pred_2day_spread'] = x_train['t+2_close'] - x_train['next_open']
+    x_val['pred_2day_spread'] = x_val['t+2_close'] - x_val['next_open']
 
-x_val['t+2_close'] = x_val['next_close'].shift(-1)
-x_val = x_val.dropna(subset=['t+2_close']).reset_index(drop=True)
+    x_train['t+3_close'] = x_train['t+2_close'].shift(-1)
+    x_train = x_train.dropna(subset=['t+3_close']).reset_index(drop=True)
 
-x_train['secondaryspread'] = x_train['t+2_close'] - x_train['next_open']
-x_val['secondaryspread'] = x_val['t+2_close'] - x_val['next_open']
+    x_val['t+3_close'] = x_val['t+2_close'].shift(-1)
+    x_val = x_val.dropna(subset=['t+3_close']).reset_index(drop=True)
 
-x_train['t+3_close'] = x_train['t+2_close'].shift(-1)
-x_train = x_train.dropna(subset=['t+3_close']).reset_index(drop=True)
+    y_train = y_train[:len(x_train)]
+    y_val = y_val[:len(x_val)]
 
-x_val['t+3_close'] = x_val['t+2_close'].shift(-1)
-x_val = x_val.dropna(subset=['t+3_close']).reset_index(drop=True)
-
-
-
-
-
-y_train = y_train[:len(x_train)]
-y_val = y_val[:len(x_val)]
-
+    x_train['pred_spread'] = x_train['next_close'] - x_train['next_open']
+    x_val['pred_spread'] = x_val['next_close'] - x_val['next_open']
+    return x_train, y_train, x_val, y_val
 
 
-
-x_train['spread_t+1'] = x_train['next_close'] - x_train['next_open']
-x_val['spread_t+1'] = x_val['next_close'] - x_val['next_open']
-
-
-
+new_xtrain, new_ytrain, new_xval, new_yval = test_data(x_train, y_train, x_val, y_val)
+print(new_xtrain.head())
+sys.exit()
 
 dtrain = xgb.DMatrix(x_train, y_train)
 dval = xgb.DMatrix(x_val, y_val)
